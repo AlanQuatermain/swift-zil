@@ -1,73 +1,111 @@
 import Foundation
 
-/// Manages collection and reporting of diagnostics (errors, warnings, etc.)
+/// Manages collection and reporting of diagnostic messages during compilation.
+///
+/// `DiagnosticManager` serves as a central repository for all errors, warnings,
+/// and other diagnostic messages generated during ZIL compilation, assembly, and
+/// execution. It provides methods to add diagnostics, query their status, and
+/// format them for display.
+///
+/// ## Usage Example
+/// ```swift
+/// let manager = DiagnosticManager()
+/// let error = ParseError.undefinedSymbol(name: "MISSING", location: location)
+/// manager.add(error)
+///
+/// if manager.hasErrors {
+///     manager.printDiagnostics(colorOutput: true)
+/// }
+/// ```
+///
+/// ## Thread Safety
+/// This class is not thread-safe. Use appropriate synchronization if accessing
+/// from multiple threads.
 public class DiagnosticManager {
-    /// All collected diagnostics
+    /// Internal storage for all collected diagnostics
     private var diagnostics: [any ZILError] = []
 
-    /// Whether any fatal errors have been recorded
+    /// Indicates whether any fatal errors have been recorded
     public var hasFatalErrors: Bool {
         return diagnostics.contains { $0.severity == .fatal }
     }
 
-    /// Whether any errors (including fatal) have been recorded
+    /// Indicates whether any errors (including fatal) have been recorded
     public var hasErrors: Bool {
         return diagnostics.contains { $0.severity == .error || $0.severity == .fatal }
     }
 
-    /// Whether any warnings have been recorded
+    /// Indicates whether any warnings have been recorded
     public var hasWarnings: Bool {
         return diagnostics.contains { $0.severity == .warning }
     }
 
-    /// Total number of diagnostics
+    /// The total number of diagnostics recorded
     public var count: Int {
         return diagnostics.count
     }
 
-    /// Count of errors by severity
+    /// The number of errors (including fatal errors)
     public var errorCount: Int {
         return diagnostics.filter { $0.severity == .error || $0.severity == .fatal }.count
     }
 
+    /// The number of warnings
     public var warningCount: Int {
         return diagnostics.filter { $0.severity == .warning }.count
     }
 
-    /// Initialize empty diagnostic manager
+    /// Creates a new empty diagnostic manager
     public init() {}
 
-    /// Add a diagnostic error
+    /// Adds a single diagnostic to the collection.
+    ///
+    /// - Parameter error: The diagnostic error to add
     public func add<T: ZILError>(_ error: T) {
         diagnostics.append(error)
     }
 
-    /// Add multiple diagnostics
+    /// Adds multiple diagnostics to the collection.
+    ///
+    /// - Parameter errors: The array of diagnostic errors to add
     public func add<T: ZILError>(contentsOf errors: [T]) {
         diagnostics.append(contentsOf: errors)
     }
 
-    /// Clear all diagnostics
+    /// Removes all diagnostics from the collection
     public func clear() {
         diagnostics.removeAll()
     }
 
-    /// Get all diagnostics
+    /// Returns all collected diagnostics.
+    ///
+    /// - Returns: An array containing all diagnostics in the order they were added
     public func allDiagnostics() -> [any ZILError] {
         return diagnostics
     }
 
-    /// Get diagnostics filtered by severity
+    /// Returns diagnostics filtered by severity level.
+    ///
+    /// - Parameter severity: The severity level to filter by
+    /// - Returns: An array of diagnostics matching the specified severity
     public func diagnostics(withSeverity severity: ErrorSeverity) -> [any ZILError] {
         return diagnostics.filter { $0.severity == severity }
     }
 
-    /// Get diagnostics for a specific file
+    /// Returns diagnostics for a specific source file.
+    ///
+    /// - Parameter file: The filename to filter by
+    /// - Returns: An array of diagnostics from the specified file
     public func diagnostics(forFile file: String) -> [any ZILError] {
         return diagnostics.filter { $0.location?.file == file }
     }
 
-    /// Sort diagnostics by source location
+    /// Returns all diagnostics sorted by their source location.
+    ///
+    /// Diagnostics are sorted first by file name, then by line and column number.
+    /// Diagnostics without source locations are placed at the end.
+    ///
+    /// - Returns: An array of diagnostics sorted by source location
     public func sortedDiagnostics() -> [any ZILError] {
         return diagnostics.sorted { error1, error2 in
             guard let loc1 = error1.location, let loc2 = error2.location else {
@@ -78,7 +116,10 @@ public class DiagnosticManager {
         }
     }
 
-    /// Format all diagnostics for display
+    /// Formats all diagnostics as a multi-line string for display.
+    ///
+    /// - Parameter colorOutput: Whether to include ANSI color codes for terminal display
+    /// - Returns: A formatted string containing all diagnostics
     public func formatDiagnostics(colorOutput: Bool = false) -> String {
         let sorted = sortedDiagnostics()
         return sorted.map { diagnostic in
@@ -86,7 +127,12 @@ public class DiagnosticManager {
         }.joined(separator: "\n")
     }
 
-    /// Format a single diagnostic
+    /// Formats a single diagnostic for display.
+    ///
+    /// - Parameters:
+    ///   - diagnostic: The diagnostic to format
+    ///   - colorOutput: Whether to include ANSI color codes for terminal display
+    /// - Returns: A formatted string representation of the diagnostic
     public func formatDiagnostic(_ diagnostic: any ZILError, colorOutput: Bool = false) -> String {
         if colorOutput {
             return formatDiagnosticWithColor(diagnostic)
@@ -115,7 +161,9 @@ public class DiagnosticManager {
         }
     }
 
-    /// Print diagnostics to stderr
+    /// Prints all diagnostics to standard error.
+    ///
+    /// - Parameter colorOutput: Whether to include ANSI color codes for terminal display
     public func printDiagnostics(colorOutput: Bool = false) {
         let output = formatDiagnostics(colorOutput: colorOutput)
         if !output.isEmpty {
@@ -123,7 +171,10 @@ public class DiagnosticManager {
         }
     }
 
-    /// Print summary of diagnostic counts
+    /// Prints a summary of diagnostic counts to standard error.
+    ///
+    /// The summary includes the total number of errors and warnings in a format
+    /// suitable for command-line tools.
     public func printSummary() {
         let errors = errorCount
         let warnings = warningCount
@@ -143,9 +194,21 @@ public class DiagnosticManager {
     }
 }
 
-/// Utility functions for error handling
+/// Utility functions for enhanced error handling and reporting.
+///
+/// `ErrorUtils` provides static methods for formatting errors with source context,
+/// generating fix suggestions, and creating user-friendly error messages.
 public enum ErrorUtils {
-    /// Create a user-friendly error message with context
+    /// Creates a user-friendly error message with source code context.
+    ///
+    /// This method enhances error messages by showing the relevant source code lines
+    /// around the error location, with a caret (^) pointing to the exact column.
+    ///
+    /// - Parameters:
+    ///   - error: The error to format
+    ///   - sourceText: Optional source code text to provide context
+    ///   - contextLines: Number of lines to show before and after the error (default: 2)
+    /// - Returns: A formatted error message with optional source context
     public static func formatErrorWithContext(
         _ error: any ZILError,
         sourceText: String? = nil,
@@ -184,7 +247,13 @@ public enum ErrorUtils {
         return result
     }
 
-    /// Suggest fixes for common errors
+    /// Generates suggested fixes for common errors.
+    ///
+    /// This method analyzes the type and content of an error to provide
+    /// actionable suggestions for fixing the issue.
+    ///
+    /// - Parameter error: The error to analyze
+    /// - Returns: An array of suggested fix descriptions
     public static func suggestFixes(for error: any ZILError) -> [String] {
         switch error {
         case let parseError as ParseError:

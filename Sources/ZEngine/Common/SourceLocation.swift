@@ -1,16 +1,39 @@
 import Foundation
 
-/// Represents a location in source code with file, line, and column information
+/// Represents a location in source code for error reporting and debugging.
+///
+/// `SourceLocation` provides precise tracking of where errors, warnings, or other
+/// diagnostics occur in ZIL source files. It includes file path, line number,
+/// column number, and optional byte offset information.
+///
+/// ## Thread Safety
+/// This struct conforms to `Sendable` and is safe to use across concurrent contexts.
+///
+/// ## Usage Example
+/// ```swift
+/// let location = SourceLocation(file: "game.zil", line: 42, column: 10)
+/// print(location.description) // Prints: "game.zil:42:10"
+/// ```
 public struct SourceLocation: Sendable {
-    /// The file path or name
+    /// The file path or name where this location occurs
     public let file: String
-    /// The line number (1-based)
+
+    /// The line number (1-based) within the file
     public let line: Int
-    /// The column number (1-based)
+
+    /// The column number (1-based) within the line
     public let column: Int
-    /// Optional byte offset from start of file
+
+    /// Optional byte offset from the beginning of the file
     public let offset: Int?
 
+    /// Creates a new source location.
+    ///
+    /// - Parameters:
+    ///   - file: The file path or name where the location occurs
+    ///   - line: The line number (1-based)
+    ///   - column: The column number (1-based)
+    ///   - offset: Optional byte offset from the beginning of the file
     public init(file: String, line: Int, column: Int, offset: Int? = nil) {
         self.file = file
         self.line = line
@@ -18,15 +41,24 @@ public struct SourceLocation: Sendable {
         self.offset = offset
     }
 
-    /// Creates a source location from a file URL
+    /// Creates a source location from a file URL.
+    ///
+    /// This convenience initializer extracts the last path component from the URL
+    /// to use as the file name in the location.
+    ///
+    /// - Parameters:
+    ///   - file: The file URL where the location occurs
+    ///   - line: The line number (1-based)
+    ///   - column: The column number (1-based)
+    ///   - offset: Optional byte offset from the beginning of the file
     public init(file: URL, line: Int, column: Int, offset: Int? = nil) {
         self.init(file: file.lastPathComponent, line: line, column: column, offset: offset)
     }
 
-    /// A placeholder source location for generated code
+    /// A placeholder source location for generated code that doesn't correspond to source files
     public static let generated = SourceLocation(file: "<generated>", line: 0, column: 0)
 
-    /// A placeholder source location for unknown origins
+    /// A placeholder source location for unknown or unspecified source positions
     public static let unknown = SourceLocation(file: "<unknown>", line: 0, column: 0)
 }
 
