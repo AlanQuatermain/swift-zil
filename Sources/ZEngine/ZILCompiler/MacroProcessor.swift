@@ -185,9 +185,10 @@ public final class MacroProcessor: Sendable {
             }
 
             // Create parameter substitution map
-            let substitutions = Dictionary(
-                uniqueKeysWithValues: zip(macro.parameters, arguments)
-            )
+            var substitutions: [String: ZILExpression] = [:]
+            for (parameter, argument) in zip(macro.parameters, arguments) {
+                substitutions[parameter] = argument
+            }
 
             // Perform expansion with direct substitution (ZIL style)
             let expandedBody = expandExpressionWithSubstitution(
@@ -254,9 +255,10 @@ public final class MacroProcessor: Sendable {
         }
 
         // Create parameter substitution map
-        let substitutions = Dictionary(
-            uniqueKeysWithValues: zip(macro.parameters, arguments)
-        )
+        var substitutions: [String: ZILExpression] = [:]
+        for (parameter, argument) in zip(macro.parameters, arguments) {
+            substitutions[parameter] = argument
+        }
 
         // Perform expansion with direct substitution (ZIL style)
         let expandedBody = expandExpressionWithSubstitution(
@@ -385,9 +387,10 @@ public final class MacroProcessor: Sendable {
                 }
 
                 // Create parameter substitution map
-                let substitutions = Dictionary(
-                    uniqueKeysWithValues: zip(macro.parameters, arguments)
-                )
+                var substitutions: [String: ZILExpression] = [:]
+                for (parameter, argument) in zip(macro.parameters, arguments) {
+                    substitutions[parameter] = argument
+                }
 
                 // Perform expansion with direct substitution
                 let expandedBody = expandExpressionWithSubstitution(

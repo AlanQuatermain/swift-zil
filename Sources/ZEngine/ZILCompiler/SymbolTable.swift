@@ -165,6 +165,7 @@ public final class SymbolTableManager: Sendable {
     }
 
     /// Define a symbol in the current scope
+    @discardableResult
     public func defineSymbol(
         name: String,
         type: SymbolType,
