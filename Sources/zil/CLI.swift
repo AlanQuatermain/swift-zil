@@ -1,5 +1,6 @@
 import ArgumentParser
 import ZEngine
+import Logging
 
 /// Main entry point for the ZIL Interactive Fiction Development Environment.
 ///
@@ -119,6 +120,26 @@ struct BuildCommand: ParsableCommand {
     @Option(help: "Optimization level (0-2)")
     var optimize: Int = 1
 
+    /// Increase verbosity of library logging output.
+    ///
+    /// Multiple flags increase verbosity:
+    /// - Default: notice level and above
+    /// - -v: info level and above
+    /// - -vv: debug level and above
+    /// - -vvv: trace level and above
+    @Flag(name: .shortAndLong, help: "Increase verbosity (-v, -vv, -vvv)")
+    var verbose: Int
+
+    /// Computed property to get the appropriate log level based on verbosity
+    private var logLevel: Logger.Level {
+        switch verbose {
+        case 0: return .notice
+        case 1: return .info
+        case 2: return .debug
+        default: return .trace
+        }
+    }
+
     /// Executes the build command with the specified options.
     ///
     /// This method orchestrates the compilation pipeline, handling file I/O,
@@ -127,6 +148,9 @@ struct BuildCommand: ParsableCommand {
     /// - Throws: Various errors related to file access, compilation failures,
     ///           or invalid command-line arguments
     func run() throws {
+        // Initialize logging with appropriate verbosity level
+        ZILLogger.bootstrap(logLevel: logLevel)
+
         print("Building ZIL project from \(input)")
         print("Target: Z-Machine v\(version)")
         if assemblyOnly {
@@ -207,6 +231,26 @@ struct RunCommand: ParsableCommand {
     @Option(help: "Directory for save games")
     var saveDir: String?
 
+    /// Increase verbosity of library logging output.
+    ///
+    /// Multiple flags increase verbosity:
+    /// - Default: notice level and above
+    /// - -v: info level and above
+    /// - -vv: debug level and above
+    /// - -vvv: trace level and above
+    @Flag(name: .shortAndLong, help: "Increase verbosity (-v, -vv, -vvv)")
+    var verbose: Int
+
+    /// Computed property to get the appropriate log level based on verbosity
+    private var logLevel: Logger.Level {
+        switch verbose {
+        case 0: return .notice
+        case 1: return .info
+        case 2: return .debug
+        default: return .trace
+        }
+    }
+
     /// Executes the run command to launch the game.
     ///
     /// This method handles input detection, optional compilation, and VM setup
@@ -215,6 +259,9 @@ struct RunCommand: ParsableCommand {
     /// - Throws: Various errors related to file access, compilation failures,
     ///           VM initialization, or runtime execution problems
     func run() throws {
+        // Initialize logging with appropriate verbosity level
+        ZILLogger.bootstrap(logLevel: logLevel)
+
         print("Running ZIL project/game from \(input)")
         if debug {
             print("VM debug mode enabled")
@@ -323,6 +370,26 @@ struct AnalyzeCommand: ParsableCommand {
     @Flag(help: "Show all sections (equivalent to all other flags)")
     var all = false
 
+    /// Increase verbosity of library logging output.
+    ///
+    /// Multiple flags increase verbosity:
+    /// - Default: notice level and above
+    /// - -v: info level and above
+    /// - -vv: debug level and above
+    /// - -vvv: trace level and above
+    @Flag(name: .shortAndLong, help: "Increase verbosity (-v, -vv, -vvv)")
+    var verbose: Int
+
+    /// Computed property to get the appropriate log level based on verbosity
+    private var logLevel: Logger.Level {
+        switch verbose {
+        case 0: return .notice
+        case 1: return .info
+        case 2: return .debug
+        default: return .trace
+        }
+    }
+
     /// Executes the analyze command with the specified inspection options.
     ///
     /// This method coordinates the analysis process, loading the story file,
@@ -331,6 +398,9 @@ struct AnalyzeCommand: ParsableCommand {
     /// - Throws: Various errors related to file access, story file corruption,
     ///           or unsupported Z-Machine versions
     func run() throws {
+        // Initialize logging with appropriate verbosity level
+        ZILLogger.bootstrap(logLevel: logLevel)
+
         let target = storyFile ?? "[current project]"
         print("Analyzing Z-Machine story file: \(target)")
 

@@ -1,6 +1,7 @@
 import Testing
 @testable import ZEngine
 import Foundation
+import Logging
 
 @Suite("ZIL to ZAP Integration Tests")
 struct ZILToZAPIntegrationTests {
@@ -169,12 +170,12 @@ struct ZILToZAPIntegrationTests {
         let infocomZAPPath = "/Users/jim/Projects/ZIL/enchanter/crufty.zap"
         let infocomZAP = try String(contentsOfFile: infocomZAPPath, encoding: .utf8)
 
-        print("Our generated ZAP:")
-        print("==================")
-        print(generatedZAP)
-        print("\nInfocom ZAP:")
-        print("============")
-        print(infocomZAP)
+        // Add both versions as test attachments for comparison
+        let generatedZAPAttachment = Attachment(generatedZAP, named: "generated-crufty.zap")
+        Attachment.record(generatedZAPAttachment)
+
+        let infocomZAPAttachment = Attachment(infocomZAP, named: "infocom-crufty.zap")
+        Attachment.record(infocomZAPAttachment)
 
         // Use diff to compare the files
         let process = Process()
@@ -191,12 +192,10 @@ struct ZILToZAPIntegrationTests {
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         let diffOutput = String(data: data, encoding: .utf8) ?? ""
 
-        print("\nDiff between Infocom and our output:")
-        print("===================================")
-        if diffOutput.isEmpty {
-            print("No differences found!")
-        } else {
-            print(diffOutput)
+        // Add diff output as attachment if there are differences
+        if !diffOutput.isEmpty {
+            let diffAttachment = Attachment(diffOutput, named: "crufty-comparison.diff")
+            Attachment.record(diffAttachment)
         }
 
         // Clean up
@@ -232,10 +231,9 @@ struct ZILToZAPIntegrationTests {
 
         let result = try generator.generateCode(from: [.routine(routine)])
 
-        print("Simple routine ZAP output (O1 production mode):")
-        print("===========================================")
-        print(result)
-        print("===========================================")
+        // Add generated ZAP as attachment for inspection
+        let zapAttachment = Attachment(result, named: "simple-routine.zap")
+        Attachment.record(zapAttachment)
 
         // Production mode expectations
         #expect(result.contains(".ZVERSION 3"))
@@ -258,16 +256,22 @@ struct ZILToZAPIntegrationTests {
         let infocomZAPPath = "/Users/jim/Projects/ZIL/enchanter/crufty.zap"
         let infocomZAP = try String(contentsOfFile: infocomZAPPath, encoding: .utf8)
 
-        print("Infocom ZAP structure analysis:")
-        print("==============================")
+        // Create structure analysis for attachment
+        var analysisLines: [String] = ["Infocom ZAP structure analysis:", "==============================", ""]
 
         let lines = infocomZAP.components(separatedBy: .newlines)
         for (index, line) in lines.enumerated() {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if !trimmed.isEmpty {
-                print("Line \(index + 1): '\(trimmed)'")
+                analysisLines.append("Line \(index + 1): '\(trimmed)'")
             }
         }
+
+        let analysisOutput = analysisLines.joined(separator: "\n")
+
+        // Add analysis as attachment
+        let analysisAttachment = Attachment(analysisOutput, named: "crufty-structure-analysis.txt")
+        Attachment.record(analysisAttachment)
 
         // Key patterns to note:
         // 1. Function signature format: .FUNCT THIS-IT?,OBJ,TBL,SYNS,?TMP1
@@ -421,11 +425,6 @@ struct ZILToZAPIntegrationTests {
         let infocomZAPPath = "/Users/jim/Projects/ZIL/enchanter/egg.zap"
         let infocomZAP = try String(contentsOfFile: infocomZAPPath, encoding: .utf8)
 
-        print("Our generated ZAP (EGG-KNOB-STATE routine):")
-        print("============================================")
-        print(generatedZAP)
-        print("\nInfocom ZAP (EGG-KNOB-STATE routine excerpt):")
-        print("==============================================")
         // Extract just the EGG-KNOB-STATE routine from Infocom ZAP
         let lines = infocomZAP.components(separatedBy: .newlines)
         var inRoutine = false
@@ -445,7 +444,13 @@ struct ZILToZAPIntegrationTests {
         }
 
         let infocomRoutineZAP = routineLines.joined(separator: "\n")
-        print(infocomRoutineZAP)
+
+        // Add both versions as attachments for comparison
+        let generatedAttachment = Attachment(generatedZAP, named: "generated-egg-knob-state.zap")
+        Attachment.record(generatedAttachment)
+
+        let infocomAttachment = Attachment(infocomRoutineZAP, named: "infocom-egg-knob-state.zap")
+        Attachment.record(infocomAttachment)
 
         // Use diff to compare our generated output with the Infocom routine
         let infocomRoutineFile = tempDir.appendingPathComponent("infocom_egg_knob_state.zap")
@@ -465,12 +470,10 @@ struct ZILToZAPIntegrationTests {
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         let diffOutput = String(data: data, encoding: .utf8) ?? ""
 
-        print("\nDiff between Infocom and our output:")
-        print("===================================")
-        if diffOutput.isEmpty {
-            print("No differences found!")
-        } else {
-            print(diffOutput)
+        // Add diff output as attachment if there are differences
+        if !diffOutput.isEmpty {
+            let diffAttachment = Attachment(diffOutput, named: "egg-knob-state-comparison.diff")
+            Attachment.record(diffAttachment)
         }
 
         // Clean up

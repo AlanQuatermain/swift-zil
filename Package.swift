@@ -26,12 +26,16 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.6.0"),
-        .package(url: "https://github.com/apple/swift-testing", from: "6.2.0")
+        .package(url: "https://github.com/apple/swift-testing", from: "6.2.0"),
+        .package(url: "https://github.com/apple/swift-log", from: "1.0.0")
     ],
     targets: [
-        // Core library target - no dependencies
+        // Core library target
         .target(
-            name: "ZEngine"
+            name: "ZEngine",
+            dependencies: [
+                .product(name: "Logging", package: "swift-log")
+            ]
         ),
 
         // Unified command-line tool target
@@ -48,7 +52,8 @@ let package = Package(
             name: "ZEngineTests",
             dependencies: [
                 "ZEngine",
-                .product(name: "Testing", package: "swift-testing")
+                .product(name: "Testing", package: "swift-testing"),
+                .product(name: "Logging", package: "swift-log")
             ]
         ),
     ]
