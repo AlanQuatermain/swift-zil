@@ -66,6 +66,26 @@ public enum ZILDeclaration: Sendable, Equatable {
     case version(ZILVersionDeclaration)
 }
 
+/// Parameter with optional default value.
+///
+/// Used for routine parameters that may have default values.
+public struct ZILParameter: Sendable, Equatable {
+    /// Parameter name
+    public let name: String
+
+    /// Default value (nil for required parameters)
+    public let defaultValue: ZILExpression?
+
+    /// Source location of the parameter
+    public let location: SourceLocation
+
+    public init(name: String, defaultValue: ZILExpression? = nil, location: SourceLocation) {
+        self.name = name
+        self.defaultValue = defaultValue
+        self.location = location
+    }
+}
+
 /// Routine definition structure.
 ///
 /// Represents ZIL routine definitions with parameters, optional parameters,
@@ -77,11 +97,11 @@ public struct ZILRoutineDeclaration: Sendable, Equatable {
     /// Required parameters
     public let parameters: [String]
 
-    /// Optional parameters (marked with "OPT")
-    public let optionalParameters: [String]
+    /// Optional parameters with default values (marked with "OPT")
+    public let optionalParameters: [ZILParameter]
 
-    /// Auxiliary variables (marked with "AUX")
-    public let auxiliaryVariables: [String]
+    /// Auxiliary variables with optional default values (marked with "AUX")
+    public let auxiliaryVariables: [ZILParameter]
 
     /// Routine body expressions
     public let body: [ZILExpression]
@@ -89,7 +109,7 @@ public struct ZILRoutineDeclaration: Sendable, Equatable {
     /// Source location of the routine declaration
     public let location: SourceLocation
 
-    public init(name: String, parameters: [String] = [], optionalParameters: [String] = [], auxiliaryVariables: [String] = [], body: [ZILExpression], location: SourceLocation) {
+    public init(name: String, parameters: [String] = [], optionalParameters: [ZILParameter] = [], auxiliaryVariables: [ZILParameter] = [], body: [ZILExpression], location: SourceLocation) {
         self.name = name
         self.parameters = parameters
         self.optionalParameters = optionalParameters

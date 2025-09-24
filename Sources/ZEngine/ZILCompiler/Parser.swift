@@ -189,10 +189,10 @@ public class ZILParser {
     }
 
     /// Parses a parameter list with optional and auxiliary parameters.
-    private func parseParameterList() throws -> (parameters: [String], optional: [String], auxiliary: [String]) {
+    private func parseParameterList() throws -> (parameters: [String], optional: [ZILParameter], auxiliary: [ZILParameter]) {
         var parameters: [String] = []
-        var optionalParameters: [String] = []
-        var auxiliaryVariables: [String] = []
+        var optionalParameters: [ZILParameter] = []
+        var auxiliaryVariables: [ZILParameter] = []
         var currentSection: ParameterSection = .required
 
         while !check(.rightParen) && !isAtEnd {
@@ -207,12 +207,38 @@ public class ZILParser {
                     case .required:
                         parameters.append(name)
                     case .optional:
-                        optionalParameters.append(name)
+                        // Optional parameters without parentheses (no default)
+                        optionalParameters.append(ZILParameter(name: name, defaultValue: nil, location: currentToken.location))
                     case .auxiliary:
-                        auxiliaryVariables.append(name)
+                        // Auxiliary variables without parentheses (no default)
+                        auxiliaryVariables.append(ZILParameter(name: name, defaultValue: nil, location: currentToken.location))
                     }
                 }
                 try advance()
+            } else if case .leftParen = currentToken.type {
+                // Handle parameters with default values: (PARAM defaultvalue)
+                let paramStart = currentToken.location
+                try advance() // Skip (
+
+                guard case .atom(let paramName) = currentToken.type else {
+                    throw ParseError.expectedParameterName(location: currentToken.location)
+                }
+                try advance() // Skip parameter name
+
+                // Parse the default value
+                let defaultValue = try parseExpressionInternal()
+
+                try consume(.rightParen, "Expected ')' after parameter default value")
+
+                // Add parameter to appropriate section
+                switch currentSection {
+                case .required:
+                    throw ParseError.invalidSyntax("Required parameters cannot have default values", location: currentToken.location)
+                case .optional:
+                    optionalParameters.append(ZILParameter(name: paramName, defaultValue: defaultValue, location: paramStart))
+                case .auxiliary:
+                    auxiliaryVariables.append(ZILParameter(name: paramName, defaultValue: defaultValue, location: paramStart))
+                }
             } else if case .string(let str) = currentToken.type {
                 // Handle quoted parameter section markers
                 switch str.uppercased() {

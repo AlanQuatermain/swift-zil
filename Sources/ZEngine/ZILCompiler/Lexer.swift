@@ -408,12 +408,12 @@ public class ZILLexer {
 
     /// Checks if a character can start an atom name.
     private func isAtomStartChar(_ char: Character) -> Bool {
-        return char.isLetter || "?-".contains(char)
+        return char.isLetter || "-?+*/=!&|%".contains(char)
     }
 
     /// Checks if a character can appear in an atom name.
     private func isAtomChar(_ char: Character) -> Bool {
-        return char.isLetter || char.isNumber || "-?".contains(char)
+        return char.isLetter || char.isNumber || "-?+*/=!&|%".contains(char)
     }
 
     /// Checks if a character is a valid octal digit.

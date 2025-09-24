@@ -169,8 +169,8 @@ struct ParserTests {
             if case .routine(let routine) = declarations[0] {
                 #expect(routine.name == "HELLO-WORLD")
                 #expect(routine.parameters == ["NAME"])
-                #expect(routine.optionalParameters == ["COUNT"])
-                #expect(routine.auxiliaryVariables == ["TEMP"])
+                #expect(routine.optionalParameters.map(\.name) == ["COUNT"])
+                #expect(routine.auxiliaryVariables.map(\.name) == ["TEMP"])
                 #expect(routine.body.count == 2)
             } else {
                 #expect(Bool(false), "Expected routine declaration")
