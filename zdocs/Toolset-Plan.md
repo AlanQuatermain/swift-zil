@@ -96,16 +96,61 @@ Based on the architectural design from the ZIL expert advisor, here's an expande
 - Create preprocessor for handling compile-time directives
 - Add debugging support for macro expansion tracking
 
-### **2.6 ZAP Code Generation**
-- Design `ZAPCodeGenerator` with instruction emission framework
+### **2.6 Semantic Analysis**
+- Implement `SemanticAnalyzer` class with comprehensive validation
+- Create symbol resolution system:
+  - Link variable references to definitions across scopes
+  - Resolve routine calls to routine definitions
+  - Connect object property references to object definitions
+  - Validate flag usage against flag definitions
+- Build type checking system:
+  - Ensure proper usage of ZIL constructs (objects, routines, properties)
+  - Validate routine parameter counts and types
+  - Check property access patterns and default values
+  - Verify flag operations on appropriate objects
+- Implement scope validation:
+  - Check local variable usage within proper routine scope
+  - Validate global variable accessibility
+  - Ensure proper parameter and auxiliary variable usage
+- Create forward reference resolution:
+  - Handle routines and objects defined after use
+  - Resolve circular dependencies between constructs
+  - Build dependency graphs for proper initialization order
+- Integrate with symbol table system:
+  - Connect parsed AST nodes with symbol definitions
+  - Generate cross-reference tables for IDE support
+  - Provide symbol usage analysis and reporting
+
+### **2.7 ZAP Assembly Code Generation**
+- Design `ZAPCodeGenerator` class with instruction emission framework
 - Implement code generation for each ZIL construct:
   - Routine definitions → `.FUNCT` directives with proper parameter handling
   - Object definitions → object table entries with property encoding
   - Control flow → conditional branches with label generation
   - Arithmetic expressions → Z-Machine instruction sequences
   - Function calls → `CALL` instructions with argument passing
+- Build expression compiler:
+  - Convert ZIL expressions to Z-Machine instruction sequences
+  - Handle operator precedence and associativity
+  - Generate efficient code for common patterns
+  - Support for all Z-Machine data types and operations
+- Create object and property management:
+  - Generate object table with hierarchical relationships
+  - Encode property values with proper type handling
+  - Build flag management and bit manipulation code
+  - Handle object location and movement operations
+- Implement memory layout planning:
+  - Organize global variables and constants
+  - Plan string table layout with compression
+  - Generate dictionary entries for parser integration
+  - Create proper memory segment organization
 - Create label management system for forward and backward references
 - Build optimization passes for instruction selection and register allocation
+- Build debugging support:
+  - Generate source line mapping for debugging
+  - Create symbol information for development tools
+  - Provide assembly output formatting options
+  - Support for conditional compilation and optimization levels
 
 ---
 
