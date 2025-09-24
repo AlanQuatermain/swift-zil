@@ -12,8 +12,8 @@ import Foundation
 /// - `RuntimeError`: Errors during Z-Machine execution
 /// - `FileError`: File system and I/O related errors
 public protocol ZILError: Error, CustomStringConvertible {
-    /// The source location where this error occurred, if available
-    var location: SourceLocation? { get }
+    /// The source location where this error occurred
+    var location: SourceLocation { get }
 
     /// A human-readable description of the error
     var message: String { get }
@@ -50,67 +50,214 @@ public enum ErrorSeverity: Sendable {
 /// `ParseError` represents various syntax and semantic errors that can be encountered
 /// while parsing ZIL source files, including unexpected tokens, undefined symbols,
 /// and type mismatches.
-public enum ParseError: ZILError {
-    /// An unexpected token was encountered during parsing
-    case unexpectedToken(expected: String, found: String, location: SourceLocation)
+public struct ParseError: ZILError {
+    /// The source location where this error occurred
+    public let location: SourceLocation
 
-    /// The source file ended unexpectedly
-    case unexpectedEndOfFile(location: SourceLocation)
+    /// The specific error code and associated data
+    let code: ErrorCode
 
-    /// Invalid ZIL syntax was encountered
-    case invalidSyntax(message: String, location: SourceLocation)
+    /// Specific error codes for parse errors
+    enum ErrorCode: Sendable, Equatable {
+        /// An unexpected token was encountered during parsing
+        case unexpectedToken(expected: String, found: TokenType)
 
-    /// Reference to an undefined symbol
-    case undefinedSymbol(name: String, location: SourceLocation)
+        /// The source file ended unexpectedly
+        case unexpectedEndOfFile
 
-    /// A symbol was defined more than once
-    case duplicateDefinition(name: String, location: SourceLocation, originalLocation: SourceLocation)
+        /// Invalid ZIL syntax was encountered
+        case invalidSyntax(String)
 
-    /// A type-related error occurred
-    case typeError(message: String, location: SourceLocation)
+        /// Reference to an undefined symbol
+        case undefinedSymbol(String)
 
-    public var location: SourceLocation? {
-        switch self {
-        case .unexpectedToken(_, _, let loc),
-             .unexpectedEndOfFile(let loc),
-             .invalidSyntax(_, let loc),
-             .undefinedSymbol(_, let loc),
-             .duplicateDefinition(_, let loc, _),
-             .typeError(_, let loc):
-            return loc
-        }
+        /// A symbol was defined more than once
+        case duplicateDefinition(name: String, originalLocation: SourceLocation)
+
+        /// A type-related error occurred
+        case typeError(String)
+
+        /// Expected an atom but found something else
+        case expectedAtom
+
+        /// Expected a routine name
+        case expectedRoutineName
+
+        /// Expected an object name
+        case expectedObjectName
+
+        /// Expected a global variable name
+        case expectedGlobalName
+
+        /// Expected a property name
+        case expectedPropertyName
+
+        /// Expected a constant name
+        case expectedConstantName
+
+        /// Expected a filename string
+        case expectedFilename
+
+        /// Expected a version type
+        case expectedVersionType
+
+        /// Expected a parameter name in routine declaration
+        case expectedParameterName
+
+        /// Invalid parameter section marker
+        case invalidParameterSection(String)
+
+        /// Expected an object property
+        case expectedObjectProperty
+
+        /// Unknown top-level declaration
+        case unknownDeclaration(String)
+    }
+
+    private init(_ code: ErrorCode, location: SourceLocation) {
+        self.code = code
+        self.location = location
+    }
+
+    // MARK: - Static Factory Methods
+
+    /// Creates an unexpected token error.
+    public static func unexpectedToken(expected: String, found: TokenType, location: SourceLocation) -> ParseError {
+        return ParseError(.unexpectedToken(expected: expected, found: found), location: location)
+    }
+
+    /// Creates an unexpected end of file error.
+    public static func unexpectedEndOfFile(location: SourceLocation) -> ParseError {
+        return ParseError(.unexpectedEndOfFile, location: location)
+    }
+
+    /// Creates an invalid syntax error.
+    public static func invalidSyntax(_ message: String, location: SourceLocation) -> ParseError {
+        return ParseError(.invalidSyntax(message), location: location)
+    }
+
+    /// Creates an undefined symbol error.
+    public static func undefinedSymbol(_ name: String, location: SourceLocation) -> ParseError {
+        return ParseError(.undefinedSymbol(name), location: location)
+    }
+
+    /// Creates a duplicate definition error.
+    public static func duplicateDefinition(name: String, location: SourceLocation, originalLocation: SourceLocation) -> ParseError {
+        return ParseError(.duplicateDefinition(name: name, originalLocation: originalLocation), location: location)
+    }
+
+    /// Creates a type error.
+    public static func typeError(_ message: String, location: SourceLocation) -> ParseError {
+        return ParseError(.typeError(message), location: location)
+    }
+
+    /// Creates an expected atom error.
+    public static func expectedAtom(location: SourceLocation) -> ParseError {
+        return ParseError(.expectedAtom, location: location)
+    }
+
+    /// Creates an expected routine name error.
+    public static func expectedRoutineName(location: SourceLocation) -> ParseError {
+        return ParseError(.expectedRoutineName, location: location)
+    }
+
+    /// Creates an expected object name error.
+    public static func expectedObjectName(location: SourceLocation) -> ParseError {
+        return ParseError(.expectedObjectName, location: location)
+    }
+
+    /// Creates an expected global variable name error.
+    public static func expectedGlobalName(location: SourceLocation) -> ParseError {
+        return ParseError(.expectedGlobalName, location: location)
+    }
+
+    /// Creates an expected property name error.
+    public static func expectedPropertyName(location: SourceLocation) -> ParseError {
+        return ParseError(.expectedPropertyName, location: location)
+    }
+
+    /// Creates an expected constant name error.
+    public static func expectedConstantName(location: SourceLocation) -> ParseError {
+        return ParseError(.expectedConstantName, location: location)
+    }
+
+    /// Creates an expected filename error.
+    public static func expectedFilename(location: SourceLocation) -> ParseError {
+        return ParseError(.expectedFilename, location: location)
+    }
+
+    /// Creates an expected version type error.
+    public static func expectedVersionType(location: SourceLocation) -> ParseError {
+        return ParseError(.expectedVersionType, location: location)
+    }
+
+    /// Creates an expected parameter name error.
+    public static func expectedParameterName(location: SourceLocation) -> ParseError {
+        return ParseError(.expectedParameterName, location: location)
+    }
+
+    /// Creates an invalid parameter section error.
+    public static func invalidParameterSection(_ section: String, location: SourceLocation) -> ParseError {
+        return ParseError(.invalidParameterSection(section), location: location)
+    }
+
+    /// Creates an expected object property error.
+    public static func expectedObjectProperty(location: SourceLocation) -> ParseError {
+        return ParseError(.expectedObjectProperty, location: location)
+    }
+
+    /// Creates an unknown declaration error.
+    public static func unknownDeclaration(_ keyword: String, location: SourceLocation) -> ParseError {
+        return ParseError(.unknownDeclaration(keyword), location: location)
     }
 
     public var message: String {
-        switch self {
-        case .unexpectedToken(let expected, let found, _):
+        switch code {
+        case .unexpectedToken(let expected, let found):
             return "expected '\(expected)', found '\(found)'"
         case .unexpectedEndOfFile:
             return "unexpected end of file"
-        case .invalidSyntax(let msg, _):
+        case .invalidSyntax(let msg):
             return "invalid syntax: \(msg)"
-        case .undefinedSymbol(let name, _):
+        case .undefinedSymbol(let name):
             return "undefined symbol '\(name)'"
-        case .duplicateDefinition(let name, _, let original):
+        case .duplicateDefinition(let name, let original):
             return "duplicate definition of '\(name)' (original at \(original))"
-        case .typeError(let msg, _):
+        case .typeError(let msg):
             return "type error: \(msg)"
+        case .expectedAtom:
+            return "expected atom"
+        case .expectedRoutineName:
+            return "expected routine name"
+        case .expectedObjectName:
+            return "expected object name"
+        case .expectedGlobalName:
+            return "expected global variable name"
+        case .expectedPropertyName:
+            return "expected property name"
+        case .expectedConstantName:
+            return "expected constant name"
+        case .expectedFilename:
+            return "expected filename string"
+        case .expectedVersionType:
+            return "expected version type"
+        case .expectedParameterName:
+            return "expected parameter name"
+        case .invalidParameterSection(let section):
+            return "invalid parameter section '\(section)'"
+        case .expectedObjectProperty:
+            return "expected object property"
+        case .unknownDeclaration(let keyword):
+            return "unknown declaration type '\(keyword)'"
         }
     }
 
     public var severity: ErrorSeverity {
-        switch self {
-        case .unexpectedToken, .unexpectedEndOfFile, .invalidSyntax, .undefinedSymbol, .duplicateDefinition, .typeError:
-            return .error
-        }
+        return .error
     }
 
     public var description: String {
-        if let loc = location {
-            return "\(loc): \(severity): \(message)"
-        } else {
-            return "\(severity): \(message)"
-        }
+        return "\(location): \(severity): \(message)"
     }
 }
 
@@ -119,67 +266,94 @@ public enum ParseError: ZILError {
 /// `AssemblyError` represents issues encountered while converting ZAP assembly
 /// language into Z-Machine bytecode, including invalid instructions, operands,
 /// and version compatibility problems.
-public enum AssemblyError: ZILError {
-    /// An invalid or unrecognized instruction was encountered
-    case invalidInstruction(name: String, location: SourceLocation)
+public struct AssemblyError: ZILError {
+    /// The source location where this error occurred
+    public let location: SourceLocation
 
-    /// An invalid operand was provided for an instruction
-    case invalidOperand(instruction: String, operand: String, location: SourceLocation)
+    /// The specific error code and associated data
+    let code: ErrorCode
 
-    /// Reference to an undefined label
-    case undefinedLabel(name: String, location: SourceLocation)
+    /// Specific error codes for assembly errors
+    enum ErrorCode: Sendable, Equatable {
+        /// An invalid or unrecognized instruction was encountered
+        case invalidInstruction(String)
 
-    /// A memory address is out of the valid range
-    case addressOutOfRange(address: Int, location: SourceLocation)
+        /// An invalid operand was provided for an instruction
+        case invalidOperand(instruction: String, operand: String)
 
-    /// An error occurred in memory layout or organization
-    case memoryLayoutError(message: String, location: SourceLocation)
+        /// Reference to an undefined label
+        case undefinedLabel(String)
 
-    /// An instruction is not available in the target Z-Machine version
-    case versionMismatch(instruction: String, version: Int, location: SourceLocation)
+        /// A memory address is out of the valid range
+        case addressOutOfRange(Int)
 
-    public var location: SourceLocation? {
-        switch self {
-        case .invalidInstruction(_, let loc),
-             .invalidOperand(_, _, let loc),
-             .undefinedLabel(_, let loc),
-             .addressOutOfRange(_, let loc),
-             .memoryLayoutError(_, let loc),
-             .versionMismatch(_, _, let loc):
-            return loc
-        }
+        /// An error occurred in memory layout or organization
+        case memoryLayoutError(String)
+
+        /// An instruction is not available in the target Z-Machine version
+        case versionMismatch(instruction: String, version: Int)
+    }
+
+    private init(_ code: ErrorCode, location: SourceLocation) {
+        self.code = code
+        self.location = location
+    }
+
+    // MARK: - Static Factory Methods
+
+    /// Creates an invalid instruction error.
+    public static func invalidInstruction(_ name: String, location: SourceLocation) -> AssemblyError {
+        return AssemblyError(.invalidInstruction(name), location: location)
+    }
+
+    /// Creates an invalid operand error.
+    public static func invalidOperand(instruction: String, operand: String, location: SourceLocation) -> AssemblyError {
+        return AssemblyError(.invalidOperand(instruction: instruction, operand: operand), location: location)
+    }
+
+    /// Creates an undefined label error.
+    public static func undefinedLabel(_ name: String, location: SourceLocation) -> AssemblyError {
+        return AssemblyError(.undefinedLabel(name), location: location)
+    }
+
+    /// Creates an address out of range error.
+    public static func addressOutOfRange(_ address: Int, location: SourceLocation) -> AssemblyError {
+        return AssemblyError(.addressOutOfRange(address), location: location)
+    }
+
+    /// Creates a memory layout error.
+    public static func memoryLayoutError(_ message: String, location: SourceLocation) -> AssemblyError {
+        return AssemblyError(.memoryLayoutError(message), location: location)
+    }
+
+    /// Creates a version mismatch error.
+    public static func versionMismatch(instruction: String, version: Int, location: SourceLocation) -> AssemblyError {
+        return AssemblyError(.versionMismatch(instruction: instruction, version: version), location: location)
     }
 
     public var message: String {
-        switch self {
-        case .invalidInstruction(let name, _):
+        switch code {
+        case .invalidInstruction(let name):
             return "invalid instruction '\(name)'"
-        case .invalidOperand(let instruction, let operand, _):
+        case .invalidOperand(let instruction, let operand):
             return "invalid operand '\(operand)' for instruction '\(instruction)'"
-        case .undefinedLabel(let name, _):
+        case .undefinedLabel(let name):
             return "undefined label '\(name)'"
-        case .addressOutOfRange(let address, _):
+        case .addressOutOfRange(let address):
             return "address \(address) out of range"
-        case .memoryLayoutError(let msg, _):
+        case .memoryLayoutError(let msg):
             return "memory layout error: \(msg)"
-        case .versionMismatch(let instruction, let version, _):
+        case .versionMismatch(let instruction, let version):
             return "instruction '\(instruction)' not available in Z-Machine version \(version)"
         }
     }
 
     public var severity: ErrorSeverity {
-        switch self {
-        case .invalidInstruction, .invalidOperand, .undefinedLabel, .addressOutOfRange, .memoryLayoutError, .versionMismatch:
-            return .error
-        }
+        return .error
     }
 
     public var description: String {
-        if let loc = location {
-            return "\(loc): \(severity): \(message)"
-        } else {
-            return "\(severity): \(message)"
-        }
+        return "\(location): \(severity): \(message)"
     }
 }
 
@@ -188,48 +362,90 @@ public enum AssemblyError: ZILError {
 /// `RuntimeError` represents various runtime failures that can happen while
 /// executing Z-Machine bytecode, including memory access violations, stack
 /// operations, and corrupted story files.
-public enum RuntimeError: ZILError {
-    /// An attempt to access invalid memory location
-    case invalidMemoryAccess(address: Int, location: SourceLocation?)
+public struct RuntimeError: ZILError {
+    /// The source location where this error occurred
+    public let location: SourceLocation
 
-    /// Stack underflow occurred (pop from empty stack)
-    case stackUnderflow(location: SourceLocation?)
+    /// The specific error code and associated data
+    let code: ErrorCode
 
-    /// Stack overflow occurred (too many items pushed)
-    case stackOverflow(location: SourceLocation?)
+    /// Specific error codes for runtime errors
+    enum ErrorCode: Sendable, Equatable {
+        /// An attempt to access invalid memory location
+        case invalidMemoryAccess(Int)
 
-    /// Division by zero was attempted
-    case divisionByZero(location: SourceLocation?)
+        /// Stack underflow occurred (pop from empty stack)
+        case stackUnderflow
 
-    /// An attempt to access an invalid object
-    case invalidObjectAccess(objectId: Int, location: SourceLocation?)
+        /// Stack overflow occurred (too many items pushed)
+        case stackOverflow
 
-    /// An attempt to access an invalid object property
-    case invalidPropertyAccess(objectId: Int, property: Int, location: SourceLocation?)
+        /// Division by zero was attempted
+        case divisionByZero
 
-    /// The story file is corrupted or invalid
-    case corruptedStoryFile(message: String, location: SourceLocation?)
+        /// An attempt to access an invalid object
+        case invalidObjectAccess(Int)
 
-    /// An unsupported operation was requested
-    case unsupportedOperation(operation: String, location: SourceLocation?)
+        /// An attempt to access an invalid object property
+        case invalidPropertyAccess(objectId: Int, property: Int)
 
-    public var location: SourceLocation? {
-        switch self {
-        case .invalidMemoryAccess(_, let loc),
-             .stackUnderflow(let loc),
-             .stackOverflow(let loc),
-             .divisionByZero(let loc),
-             .invalidObjectAccess(_, let loc),
-             .invalidPropertyAccess(_, _, let loc),
-             .corruptedStoryFile(_, let loc),
-             .unsupportedOperation(_, let loc):
-            return loc
-        }
+        /// The story file is corrupted or invalid
+        case corruptedStoryFile(String)
+
+        /// An unsupported operation was requested
+        case unsupportedOperation(String)
+    }
+
+    private init(_ code: ErrorCode, location: SourceLocation) {
+        self.code = code
+        self.location = location
+    }
+
+    // MARK: - Static Factory Methods
+
+    /// Creates an invalid memory access error.
+    public static func invalidMemoryAccess(_ address: Int, location: SourceLocation) -> RuntimeError {
+        return RuntimeError(.invalidMemoryAccess(address), location: location)
+    }
+
+    /// Creates a stack underflow error.
+    public static func stackUnderflow(location: SourceLocation) -> RuntimeError {
+        return RuntimeError(.stackUnderflow, location: location)
+    }
+
+    /// Creates a stack overflow error.
+    public static func stackOverflow(location: SourceLocation) -> RuntimeError {
+        return RuntimeError(.stackOverflow, location: location)
+    }
+
+    /// Creates a division by zero error.
+    public static func divisionByZero(location: SourceLocation) -> RuntimeError {
+        return RuntimeError(.divisionByZero, location: location)
+    }
+
+    /// Creates an invalid object access error.
+    public static func invalidObjectAccess(_ objectId: Int, location: SourceLocation) -> RuntimeError {
+        return RuntimeError(.invalidObjectAccess(objectId), location: location)
+    }
+
+    /// Creates an invalid property access error.
+    public static func invalidPropertyAccess(objectId: Int, property: Int, location: SourceLocation) -> RuntimeError {
+        return RuntimeError(.invalidPropertyAccess(objectId: objectId, property: property), location: location)
+    }
+
+    /// Creates a corrupted story file error.
+    public static func corruptedStoryFile(_ message: String, location: SourceLocation) -> RuntimeError {
+        return RuntimeError(.corruptedStoryFile(message), location: location)
+    }
+
+    /// Creates an unsupported operation error.
+    public static func unsupportedOperation(_ operation: String, location: SourceLocation) -> RuntimeError {
+        return RuntimeError(.unsupportedOperation(operation), location: location)
     }
 
     public var message: String {
-        switch self {
-        case .invalidMemoryAccess(let address, _):
+        switch code {
+        case .invalidMemoryAccess(let address):
             return "invalid memory access at address \(address)"
         case .stackUnderflow:
             return "stack underflow"
@@ -237,19 +453,19 @@ public enum RuntimeError: ZILError {
             return "stack overflow"
         case .divisionByZero:
             return "division by zero"
-        case .invalidObjectAccess(let objectId, _):
+        case .invalidObjectAccess(let objectId):
             return "invalid object access: object \(objectId)"
-        case .invalidPropertyAccess(let objectId, let property, _):
+        case .invalidPropertyAccess(let objectId, let property):
             return "invalid property access: object \(objectId), property \(property)"
-        case .corruptedStoryFile(let msg, _):
+        case .corruptedStoryFile(let msg):
             return "corrupted story file: \(msg)"
-        case .unsupportedOperation(let operation, _):
+        case .unsupportedOperation(let operation):
             return "unsupported operation: \(operation)"
         }
     }
 
     public var severity: ErrorSeverity {
-        switch self {
+        switch code {
         case .invalidMemoryAccess, .stackUnderflow, .stackOverflow, .divisionByZero, .invalidObjectAccess, .invalidPropertyAccess:
             return .error
         case .corruptedStoryFile:
@@ -260,11 +476,7 @@ public enum RuntimeError: ZILError {
     }
 
     public var description: String {
-        if let loc = location {
-            return "\(loc): \(severity): \(message)"
-        } else {
-            return "\(severity): \(message)"
-        }
+        return "\(location): \(severity): \(message)"
     }
 }
 
@@ -273,60 +485,83 @@ public enum RuntimeError: ZILError {
 /// `FileError` represents various file system related issues that can occur
 /// during ZIL compilation, including missing files, permission problems,
 /// and read/write failures.
-public enum FileError: ZILError {
-    /// A required file could not be found
-    case fileNotFound(path: String, location: SourceLocation?)
+public struct FileError: ZILError {
+    /// The source location where this error occurred
+    public let location: SourceLocation
 
-    /// Access to a file was denied due to permissions
-    case permissionDenied(path: String, location: SourceLocation?)
+    /// The specific error code and associated data
+    let code: ErrorCode
 
-    /// An invalid file path was provided
-    case invalidPath(path: String, location: SourceLocation?)
+    /// Specific error codes for file errors
+    enum ErrorCode: Sendable, Equatable {
+        /// A required file could not be found
+        case fileNotFound(String)
 
-    /// An error occurred while reading a file
-    case readError(path: String, underlying: Error, location: SourceLocation?)
+        /// Access to a file was denied due to permissions
+        case permissionDenied(String)
 
-    /// An error occurred while writing a file
-    case writeError(path: String, underlying: Error, location: SourceLocation?)
+        /// An invalid file path was provided
+        case invalidPath(String)
 
-    public var location: SourceLocation? {
-        switch self {
-        case .fileNotFound(_, let loc),
-             .permissionDenied(_, let loc),
-             .invalidPath(_, let loc),
-             .readError(_, _, let loc),
-             .writeError(_, _, let loc):
-            return loc
-        }
+        /// An error occurred while reading a file
+        case readError(path: String, underlying: String)
+
+        /// An error occurred while writing a file
+        case writeError(path: String, underlying: String)
+    }
+
+    private init(_ code: ErrorCode, location: SourceLocation) {
+        self.code = code
+        self.location = location
+    }
+
+    // MARK: - Static Factory Methods
+
+    /// Creates a file not found error.
+    public static func fileNotFound(_ path: String, location: SourceLocation) -> FileError {
+        return FileError(.fileNotFound(path), location: location)
+    }
+
+    /// Creates a permission denied error.
+    public static func permissionDenied(_ path: String, location: SourceLocation) -> FileError {
+        return FileError(.permissionDenied(path), location: location)
+    }
+
+    /// Creates an invalid path error.
+    public static func invalidPath(_ path: String, location: SourceLocation) -> FileError {
+        return FileError(.invalidPath(path), location: location)
+    }
+
+    /// Creates a read error.
+    public static func readError(path: String, underlying: Error, location: SourceLocation) -> FileError {
+        return FileError(.readError(path: path, underlying: underlying.localizedDescription), location: location)
+    }
+
+    /// Creates a write error.
+    public static func writeError(path: String, underlying: Error, location: SourceLocation) -> FileError {
+        return FileError(.writeError(path: path, underlying: underlying.localizedDescription), location: location)
     }
 
     public var message: String {
-        switch self {
-        case .fileNotFound(let path, _):
+        switch code {
+        case .fileNotFound(let path):
             return "file not found: '\(path)'"
-        case .permissionDenied(let path, _):
+        case .permissionDenied(let path):
             return "permission denied: '\(path)'"
-        case .invalidPath(let path, _):
+        case .invalidPath(let path):
             return "invalid path: '\(path)'"
-        case .readError(let path, let error, _):
-            return "failed to read '\(path)': \(error.localizedDescription)"
-        case .writeError(let path, let error, _):
-            return "failed to write '\(path)': \(error.localizedDescription)"
+        case .readError(let path, let error):
+            return "failed to read '\(path)': \(error)"
+        case .writeError(let path, let error):
+            return "failed to write '\(path)': \(error)"
         }
     }
 
     public var severity: ErrorSeverity {
-        switch self {
-        case .fileNotFound, .permissionDenied, .invalidPath, .readError, .writeError:
-            return .error
-        }
+        return .error
     }
 
     public var description: String {
-        if let loc = location {
-            return "\(loc): \(severity): \(message)"
-        } else {
-            return "\(severity): \(message)"
-        }
+        return "\(location): \(severity): \(message)"
     }
 }

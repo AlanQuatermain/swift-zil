@@ -97,22 +97,31 @@ public class DiagnosticManager {
     /// - Parameter file: The filename to filter by
     /// - Returns: An array of diagnostics from the specified file
     public func diagnostics(forFile file: String) -> [any ZILError] {
-        return diagnostics.filter { $0.location?.file == file }
+        return diagnostics.filter { $0.location.file == file }
     }
 
     /// Returns all diagnostics sorted by their source location.
     ///
     /// Diagnostics are sorted first by file name, then by line and column number.
-    /// Diagnostics without source locations are placed at the end.
     ///
     /// - Returns: An array of diagnostics sorted by source location
     public func sortedDiagnostics() -> [any ZILError] {
         return diagnostics.sorted { error1, error2 in
-            guard let loc1 = error1.location, let loc2 = error2.location else {
-                // Errors without location go to the end
-                return error1.location != nil && error2.location == nil
+            let loc1 = error1.location
+            let loc2 = error2.location
+
+            // First sort by file
+            if loc1.file != loc2.file {
+                return loc1.file < loc2.file
             }
-            return loc1 < loc2
+
+            // Then by line number
+            if loc1.line != loc2.line {
+                return loc1.line < loc2.line
+            }
+
+            // Finally by column
+            return loc1.column < loc2.column
         }
     }
 
@@ -154,11 +163,8 @@ public class DiagnosticManager {
         }
         let resetCode = "\u{001B}[0m"
 
-        if let location = diagnostic.location {
-            return "\(location): \(colorCode)\(diagnostic.severity)\(resetCode): \(diagnostic.message)"
-        } else {
-            return "\(colorCode)\(diagnostic.severity)\(resetCode): \(diagnostic.message)"
-        }
+        let location = diagnostic.location
+        return "\(location): \(colorCode)\(diagnostic.severity)\(resetCode): \(diagnostic.message)"
     }
 
     /// Prints all diagnostics to standard error.
@@ -217,8 +223,8 @@ public enum ErrorUtils {
         var result = error.description
 
         // Add source context if available
-        if let location = error.location,
-           let sourceText = sourceText {
+        let location = error.location
+        if let sourceText = sourceText {
             let lines = sourceText.components(separatedBy: .newlines)
             let errorLine = location.line - 1 // Convert to 0-based
 
@@ -270,15 +276,15 @@ public enum ErrorUtils {
     }
 
     private static func suggestFixesForParseError(_ error: ParseError) -> [String] {
-        switch error {
-        case .unexpectedToken(let expected, let found, _):
-            if expected == ">" && found == "EOF" {
+        switch error.code {
+        case .unexpectedToken(let expected, let found):
+            if expected == ">" && "\(found)" == "EOF" {
                 return ["Add missing '>' to close the expression"]
             }
             return ["Replace '\(found)' with '\(expected)'"]
-        case .undefinedSymbol(let name, _):
+        case .undefinedSymbol(let name):
             return ["Define '\(name)' before using it", "Check spelling of '\(name)'"]
-        case .duplicateDefinition(let name, _, _):
+        case .duplicateDefinition(let name, _):
             return ["Rename one of the '\(name)' definitions", "Remove the duplicate definition"]
         default:
             return []
@@ -286,10 +292,10 @@ public enum ErrorUtils {
     }
 
     private static func suggestFixesForAssemblyError(_ error: AssemblyError) -> [String] {
-        switch error {
-        case .versionMismatch(let instruction, let version, _):
+        switch error.code {
+        case .versionMismatch(let instruction, let version):
             return ["Use Z-Machine version 5 or later", "Replace '\(instruction)' with equivalent instruction for version \(version)"]
-        case .undefinedLabel(let name, _):
+        case .undefinedLabel(let name):
             return ["Define label '\(name)'", "Check spelling of label '\(name)'"]
         default:
             return []
@@ -297,7 +303,7 @@ public enum ErrorUtils {
     }
 
     private static func suggestFixesForRuntimeError(_ error: RuntimeError) -> [String] {
-        switch error {
+        switch error.code {
         case .divisionByZero:
             return ["Check divisor before division", "Add error handling for division operations"]
         case .stackOverflow:
@@ -308,10 +314,10 @@ public enum ErrorUtils {
     }
 
     private static func suggestFixesForFileError(_ error: FileError) -> [String] {
-        switch error {
-        case .fileNotFound(let path, _):
+        switch error.code {
+        case .fileNotFound(let path):
             return ["Check that '\(path)' exists", "Verify the file path is correct"]
-        case .permissionDenied(let path, _):
+        case .permissionDenied(let path):
             return ["Check file permissions for '\(path)'", "Run with appropriate privileges"]
         default:
             return []
