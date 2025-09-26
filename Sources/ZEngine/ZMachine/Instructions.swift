@@ -49,7 +49,7 @@ extension ZMachine {
             }
 
         case 0xB7: // RESTART
-            restart()
+            try restart()
 
         case 0xB8: // RET_POPPED
             let value = try popStack()

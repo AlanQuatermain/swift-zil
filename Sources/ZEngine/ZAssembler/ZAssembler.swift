@@ -98,6 +98,12 @@ public class ZAssembler {
                 state.addSymbol(instruction.label, address: currentAddress, location: location)
                 currentAddress += size
 
+            case .objectProperty(let property, let location):
+                // Object properties don't affect address calculation but need object context
+                guard state.currentObject != nil else {
+                    throw AssemblyError.invalidInstruction("Object property '\(property.name)' outside object block", location: location)
+                }
+
             case .label(let name, let location):
                 state.addSymbol(name, address: currentAddress, location: location)
 
@@ -118,6 +124,13 @@ public class ZAssembler {
             case .instruction(let instruction, let location):
                 let bytecode = try encoder.encodeInstruction(instruction, symbolTable: state.symbolTable, location: location)
                 memoryLayout.addCode(bytecode)
+
+            case .objectProperty(let property, let location):
+                // Process object property assignment
+                guard let objectName = state.currentObject else {
+                    throw AssemblyError.invalidInstruction("Object property '\(property.name)' outside object block", location: location)
+                }
+                try memoryLayout.addObjectProperty(objectName: objectName, propertyName: property.name, value: property.value, symbolTable: state.symbolTable, location: location)
 
             case .label, .comment:
                 // Already processed in first pass
@@ -170,6 +183,12 @@ public class ZAssembler {
             }
             state.addSymbol(name, address: address, location: location)
             state.currentFunction = name
+
+            // Set MAIN function as the start routine for the story file
+            if name.uppercased() == "MAIN" {
+                memoryLayout.setStartRoutine(address: address)
+            }
+
             return address
 
         case "ENDI":
@@ -192,6 +211,7 @@ public class ZAssembler {
             }
             let objectAddress = memoryLayout.allocateObject(name)
             state.addSymbol(name, address: objectAddress, location: location)
+            state.currentObject = name  // Start object context
             return address
 
         case "PROPERTY":
@@ -199,6 +219,10 @@ public class ZAssembler {
                 throw AssemblyError.invalidOperand(instruction: "PROPERTY", operand: "requires property name", location: location)
             }
             memoryLayout.addProperty(name)
+            return address
+
+        case "ENDOBJECT":
+            state.currentObject = nil  // End object context
             return address
 
         case "END":
@@ -242,6 +266,9 @@ private class AssemblyState {
     /// Currently active function name (for local label resolution)
     var currentFunction: String?
 
+    /// Currently active object name (for object property assignment)
+    var currentObject: String?
+
     /// Add a symbol with its resolved address
     func addSymbol(_ name: String?, address: UInt32, location: SourceLocation) {
         guard let name = name else { return }
@@ -268,8 +295,20 @@ private class AssemblyState {
 public enum ZAPStatement {
     case directive(ZAPDirective, SourceLocation)
     case instruction(ZAPInstruction, SourceLocation)
+    case objectProperty(ZAPObjectProperty, SourceLocation)
     case label(String, SourceLocation)
     case comment(String, SourceLocation)
+}
+
+/// Represents a ZAP object property assignment within an object block
+public struct ZAPObjectProperty {
+    public let name: String
+    public let value: ZValue
+
+    public init(name: String, value: ZValue) {
+        self.name = name
+        self.value = value
+    }
 }
 
 /// Represents a ZAP assembler directive (.ZVERSION, .FUNCT, etc.)

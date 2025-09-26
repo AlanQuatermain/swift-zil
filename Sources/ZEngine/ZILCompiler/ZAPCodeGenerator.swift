@@ -290,6 +290,7 @@ public struct ZAPCodeGenerator {
     private var memoryLayout = MemoryLayout()
     private var output: [String] = []
     private var optimizationLevel: Int = 0  // 0 = debug, 1 = O1 (production), 2+ = future
+    private var tempVarCounter: Int = 0  // Class-level temp variable counter
 
     // MARK: - Initialization
 
@@ -297,6 +298,14 @@ public struct ZAPCodeGenerator {
         self.symbolTable = symbolTable
         self.version = version
         self.optimizationLevel = optimizationLevel
+    }
+
+    // MARK: - Helper Methods
+
+    /// Generate a unique temporary variable name
+    private mutating func generateTempVar() -> String {
+        tempVarCounter += 1
+        return "TEMP\(tempVarCounter)"
     }
 
     // MARK: - Optimization Level Helpers
@@ -790,6 +799,10 @@ public struct ZAPCodeGenerator {
     private mutating func generateExpressionAsInstructions(_ expression: ZILExpression) throws -> [String] {
         switch expression {
         case .list(let elements, let location):
+            // Handle empty list - common in ZIL for empty variable initialization lists
+            if elements.isEmpty {
+                return [] // Empty list generates no instructions
+            }
             return try generateListAsInstructions(elements, at: location)
         default:
             let expr = try generateExpression(expression)
@@ -825,7 +838,8 @@ public struct ZAPCodeGenerator {
 
     private mutating func generateListAsInstructions(_ elements: [ZILExpression], at location: SourceLocation) throws -> [String] {
         guard !elements.isEmpty else {
-            throw CodeGenerationError(.invalidInstruction("empty list"), at: location)
+            // Handle empty list - common in ZIL for empty variable initialization lists
+            return [] // Empty list generates no instructions
         }
 
         guard case .atom(let op, _) = elements[0] else {
@@ -896,6 +910,12 @@ public struct ZAPCodeGenerator {
             return try generateRestore(operands, at: location)
         case "VERIFY":
             return ["VERIFY"]
+        case "FSET?":
+            return try generateFSetTest(operands, at: location)
+        case "IN?":
+            return try generateInTest(operands, at: location)
+        case "VERB?":
+            return try generateVerbTest(operands, at: location)
         default:
             return try generateFunctionCall(op, operands, at: location)
         }
@@ -1959,7 +1979,8 @@ public struct ZAPCodeGenerator {
     }
 
     private mutating func generateRepeat(_ operands: [ZILExpression], at location: SourceLocation) throws -> [String] {
-        // REPEAT structure: (REPEAT (() (action1) (action2) ...))
+        // REPEAT structure: (REPEAT ((variable-initialization-list) action1 action2 ...))
+        // For infinite loop: (REPEAT () action1 action2 ...)
         var result: [String] = []
         let loopLabel = labelManager.generateLabel(prefix: "RPT")
         let endLabel = labelManager.generateLabel(prefix: "END")
@@ -1967,9 +1988,23 @@ public struct ZAPCodeGenerator {
         context.loopStack.append(endLabel)
         defer { context.loopStack.removeLast() }
 
+        // Handle variable initialization list (first operand)
+        // In ZIL, first operand is always the variable list, even if empty
+        if operands.isEmpty {
+            // No operands at all - this is unusual but handle gracefully
+            result.append("\(loopLabel):")
+            result.append("    JUMP \(loopLabel)")
+            result.append("\(endLabel):")
+            return result
+        }
+
+        // Skip the first operand (variable initialization list) and process loop body
+        let bodyOperands = Array(operands.dropFirst())
+
         result.append("\(loopLabel):")
 
-        for operand in operands {
+        // Generate loop body instructions
+        for operand in bodyOperands {
             let instructions = try generateExpressionAsInstructions(operand)
             result.append(contentsOf: instructions.map { "    \($0)" })
         }
@@ -2087,6 +2122,48 @@ public struct ZAPCodeGenerator {
         } else {
             throw CodeGenerationError(.invalidInstruction("RESTORE takes no operands"), at: location)
         }
+    }
+
+    // MARK: - Missing Function Implementations
+
+    private mutating func generateFSetTest(_ operands: [ZILExpression], at location: SourceLocation) throws -> [String] {
+        guard operands.count == 2 else {
+            throw CodeGenerationError(.invalidInstruction("FSET? requires 2 operands"), at: location)
+        }
+
+        let object = try generateExpression(operands[0])
+        let flag = try generateExpression(operands[1])
+
+        return ["FSET? \(object),\(flag)"]
+    }
+
+    private mutating func generateInTest(_ operands: [ZILExpression], at location: SourceLocation) throws -> [String] {
+        guard operands.count == 2 else {
+            throw CodeGenerationError(.invalidInstruction("IN? requires 2 operands"), at: location)
+        }
+
+        let object1 = try generateExpression(operands[0])
+        let object2 = try generateExpression(operands[1])
+
+        // IN? tests if object1 is contained in object2
+        // This is implemented as: LOC object1 -> temp, EQUAL? temp object2
+        let tempVar = generateTempVar()
+        return [
+            "LOC \(object1) >\(tempVar)",
+            "EQUAL? \(tempVar),\(object2)"
+        ]
+    }
+
+    private mutating func generateVerbTest(_ operands: [ZILExpression], at location: SourceLocation) throws -> [String] {
+        guard operands.count == 1 else {
+            throw CodeGenerationError(.invalidInstruction("VERB? requires 1 operand"), at: location)
+        }
+
+        let verb = try generateExpression(operands[0])
+
+        // VERB? tests if the current parser verb matches the given verb
+        // This compares against the PRSA (parser action) global variable
+        return ["EQUAL? 'PRSA,\(verb)"]
     }
 
     private mutating func generateFunctionCall(_ function: String, _ operands: [ZILExpression], at location: SourceLocation) throws -> [String] {

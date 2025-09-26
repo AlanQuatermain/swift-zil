@@ -14,7 +14,15 @@ public class MemoryLayoutManager {
     private var objectTable: [ObjectEntry] = []
     private var propertyTable: [PropertyEntry] = []
     private var dictionary: [String: UInt16] = [:]
-    private var stringTable: [String] = []
+    // String management with deferred address calculation
+    private struct StringEntry {
+        let id: String
+        let content: String
+        var address: UInt32 = 0  // Will be set during story file generation
+    }
+
+    private var stringEntries: [StringEntry] = []
+    private var stringAddressMap: [String: UInt32] = [:]
     private var codeMemory: [UInt8] = []
 
     // Address tracking
@@ -47,15 +55,34 @@ public class MemoryLayoutManager {
 
     private func setupMemoryLayout() {
         // Initialize memory regions based on Z-Machine version
-        let dynamicSize = version.rawValue >= 5 ? 0x10000 : 0x8000 // 64KB for v5+, 32KB for earlier
-        dynamicMemory = Array(repeating: 0, count: dynamicSize)
+        // CRITICAL: Header addresses (bytes 4-5, 14-15) are UInt16, so all memory region
+        // base addresses must fit in 0-65535 range, regardless of total file size
+
+        switch version {
+        case .v3:
+            // Z-Machine v3: 128KB total file size possible
+            // Header pointers limited to UInt16 (0-65535)
+            dynamicMemory = Array(repeating: 0, count: 0x4000) // 16KB dynamic (0x0000-0x3FFF)
+            staticMemoryBase = 0x4000  // Start static at 16KB (16384)
+            highMemoryBase = 0x8000    // Start high at 32KB (32768) - safely under 65535
+
+        case .v4, .v5:
+            // Z-Machine v4/v5: 128KB/256KB total file size possible
+            // Header pointers still limited to UInt16 for initial regions
+            dynamicMemory = Array(repeating: 0, count: 0x8000) // 32KB dynamic (0x0000-0x7FFF)
+            staticMemoryBase = 0x8000  // Start static at 32KB (32768)
+            highMemoryBase = 0xC000    // Start high at 48KB (49152) - safely under 65535
+
+        case .v6, .v7, .v8:
+            // Z-Machine v6+: 256KB+ total file size possible
+            // Header pointers still UInt16 - use maximum safe values
+            dynamicMemory = Array(repeating: 0, count: 0xA000) // 40KB dynamic (0x0000-0x9FFF)
+            staticMemoryBase = 0xA000  // Start static at 40KB (40960)
+            highMemoryBase = 0xF000    // Start high at 60KB (61440) - safely under 65535
+        }
 
         // Reserve space for header (64 bytes)
         currentAddress = 64
-
-        // Set up memory bases
-        staticMemoryBase = UInt32(dynamicSize)
-        highMemoryBase = staticMemoryBase + 0x8000 // Arbitrary offset for high memory
     }
 
     // MARK: - Global Variables
@@ -103,16 +130,60 @@ public class MemoryLayoutManager {
         propertyTable.append(entry)
     }
 
+    /// Add a property to the specified object
+    ///
+    /// - Parameters:
+    ///   - objectName: Name of the object to add property to
+    ///   - propertyName: Name of the property
+    ///   - value: Property value (can be string reference, object reference, etc.)
+    ///   - symbolTable: Symbol table for resolving references
+    ///   - location: Source location for error reporting
+    /// - Throws: AssemblyError for invalid object or property
+    public func addObjectProperty(objectName: String, propertyName: String, value: ZValue, symbolTable: [String: UInt32], location: SourceLocation) throws {
+        // Find the object
+        guard let objectIndex = objectTable.firstIndex(where: { $0.name == objectName }) else {
+            throw AssemblyError.memoryLayoutError("Object \(objectName) not found", location: location)
+        }
+
+        // Resolve property value based on type
+        let resolvedValue: ZValue
+        switch value {
+        case .atom(let name):
+            // Check if this is a symbol reference (object, string, routine, etc.)
+            if symbolTable[name] != nil {
+                resolvedValue = value // Keep as reference for later resolution
+            } else {
+                resolvedValue = value // Use as-is for property names, flags, etc.
+            }
+        default:
+            resolvedValue = value
+        }
+
+        // Add property to object
+        objectTable[objectIndex].properties[propertyName] = resolvedValue
+    }
+
     // MARK: - String Management
 
     public func addString(_ id: String, content: String) -> UInt32 {
-        stringTable.append(content)
-        let stringIndex = stringTable.count - 1
+        // Add string to registry with deferred address calculation
+        let entry = StringEntry(id: id, content: content)
+        stringEntries.append(entry)
 
-        // Calculate string address in high memory
-        // This is simplified - real implementation would pack strings properly
-        let stringAddress = highMemoryBase + UInt32(stringIndex * 100) // Arbitrary spacing
-        return stringAddress
+        // Return a placeholder address that will be resolved later
+        // Use a high value to ensure it's in high memory range
+        let placeholderAddress = 0x10000 + UInt32(stringEntries.count - 1)
+        stringAddressMap[id] = placeholderAddress
+
+        return placeholderAddress
+    }
+
+    /// Get the final address of a string by its ID (after story file generation)
+    ///
+    /// - Parameter stringId: The string identifier
+    /// - Returns: The final address of the string in high memory, or nil if not found
+    public func getStringAddress(_ stringId: String) -> UInt32? {
+        return stringAddressMap[stringId]
     }
 
     // MARK: - Code Generation
@@ -138,13 +209,23 @@ public class MemoryLayoutManager {
         let dynamicSection = generateDynamicMemory()
         storyData.append(dynamicSection)
 
+        // Calculate static memory base based on current position
+        staticMemoryBase = UInt32(storyData.count)
+
         // Generate static memory section
         let staticSection = try generateStaticMemory()
         storyData.append(staticSection)
 
+        // Calculate high memory base based on current position
+        highMemoryBase = UInt32(storyData.count)
+
         // Generate high memory section
         let highSection = try generateHighMemory()
         storyData.append(highSection)
+
+        // Now regenerate header with correct memory bases
+        let correctedHeader = try generateHeader()
+        storyData.replaceSubrange(0..<64, with: correctedHeader)
 
         // Calculate and set checksum
         let checksum = calculateChecksum(for: storyData)
@@ -258,6 +339,10 @@ public class MemoryLayoutManager {
         header[3] = UInt8(releaseNumber & 0xFF)
 
         // Bytes 4-5: High memory base (high byte first)
+        // SAFETY: Ensure high memory base fits in UInt16
+        guard highMemoryBase <= 0xFFFF else {
+            throw AssemblyError.memoryLayoutError("High memory base (\(highMemoryBase)) exceeds UInt16 limit for header storage", location: SourceLocation.unknown)
+        }
         let highMemBase = UInt16(highMemoryBase)
         header[4] = UInt8((highMemBase >> 8) & 0xFF)
         header[5] = UInt8(highMemBase & 0xFF)
@@ -283,8 +368,13 @@ public class MemoryLayoutManager {
         header[13] = UInt8(globalAddress & 0xFF)
 
         // Bytes 14-15: Static memory base (high byte first)
-        header[14] = UInt8((staticMemoryBase >> 8) & 0xFF)
-        header[15] = UInt8(staticMemoryBase & 0xFF)
+        // SAFETY: Ensure static memory base fits in UInt16
+        guard staticMemoryBase <= 0xFFFF else {
+            throw AssemblyError.memoryLayoutError("Static memory base (\(staticMemoryBase)) exceeds UInt16 limit for header storage", location: SourceLocation.unknown)
+        }
+        let staticMemBase = UInt16(staticMemoryBase)
+        header[14] = UInt8((staticMemBase >> 8) & 0xFF)
+        header[15] = UInt8(staticMemBase & 0xFF)
 
         // Bytes 16-17: Flags 2 (story file requirements)
         var flags2: UInt16 = 0
@@ -361,8 +451,8 @@ public class MemoryLayoutManager {
     }
 
     private func calculateObjectTableAddress() -> UInt16 {
-        // Object table starts after header and global variables
-        return UInt16(64 + 240 * 2) // Header (64) + Globals (240 * 2 bytes)
+        // Object table starts at the beginning of static memory
+        return UInt16(staticMemoryBase)
     }
 
     private func calculateGlobalTableAddress() -> UInt16 {
@@ -371,9 +461,10 @@ public class MemoryLayoutManager {
     }
 
     private func calculateDictionaryAddress() -> UInt16 {
-        // Dictionary goes in static memory after object tables
+        // Dictionary goes in static memory after object tables and property tables
         let objectTableSize = calculateObjectTableSize()
-        return UInt16(staticMemoryBase + objectTableSize)
+        let propertyTableSize = calculatePropertyTableSize()
+        return UInt16(staticMemoryBase + objectTableSize + propertyTableSize)
     }
 
     private func calculateAbbreviationsAddress() -> UInt16 {
@@ -387,6 +478,21 @@ public class MemoryLayoutManager {
         let objectSize: UInt32 = version.rawValue >= 4 ? 14 : 9
         let objectEntries = UInt32(objectTable.count) * objectSize
         return propertyDefaults + objectEntries
+    }
+
+    private func calculatePropertyTableSize() -> UInt32 {
+        // Estimate property table size by calculating all property tables
+        var totalSize: UInt32 = 0
+        for object in objectTable {
+            if !object.properties.isEmpty {
+                // Rough estimate: object name + properties
+                // This is a conservative estimate
+                let nameSize = UInt32(object.name.count * 2) + 1 // Encoded name size + length byte
+                let propertiesSize = UInt32(object.properties.count * 4) // Conservative estimate per property
+                totalSize += nameSize + propertiesSize + 1 // +1 for end marker
+            }
+        }
+        return (totalSize + 1) & ~1 // Word-align
     }
 
     private func calculateTotalFileLength() -> UInt32 {
@@ -430,13 +536,15 @@ public class MemoryLayoutManager {
     private func generateStaticMemory() throws -> Data {
         var staticData = Data()
 
-        // Add object table
+        // First, generate property tables and set property table addresses in objects
+        let propertyTableData = try generatePropertyTables()
+
+        // Now generate object table with correct property table addresses
         let objectTableData = try generateObjectTable()
         staticData.append(objectTableData)
 
-        // Add property defaults
-        let propertyDefaults = generatePropertyDefaults()
-        staticData.append(propertyDefaults)
+        // Add the property tables after the object table
+        staticData.append(propertyTableData)
 
         // Add dictionary
         let dictionaryData = generateDictionary()
@@ -530,8 +638,18 @@ public class MemoryLayoutManager {
     }
 
     private func generatePropertyDefaults() -> Data {
-        // Property default values are included in object table
-        return Data()
+        // Z-Machine requires exactly 31 property default values (31 words = 62 bytes)
+        // Properties 1-31 each have a default value stored as UInt16 (big-endian)
+        var defaultsData = Data()
+
+        for _ in 1...31 {
+            // Default value for each property (can be customized later)
+            let defaultValue: UInt16 = 0
+            defaultsData.append(UInt8((defaultValue >> 8) & 0xFF)) // High byte
+            defaultsData.append(UInt8(defaultValue & 0xFF))        // Low byte
+        }
+
+        return defaultsData
     }
 
     private func generateDictionary() -> Data {
@@ -633,11 +751,29 @@ public class MemoryLayoutManager {
 
     private func generateStringTable() throws -> Data {
         var stringData = Data()
+        var currentOffset: UInt32 = 0
 
-        // Encode strings using Z-Machine text encoding
-        for string in stringTable {
-            let encodedString = try encodeZString(string)
+        // Calculate actual addresses and generate string data
+        for i in 0..<stringEntries.count {
+            let stringEntry = stringEntries[i]
+
+            // Calculate actual address for this string
+            let actualAddress = highMemoryBase + currentOffset
+            stringEntries[i].address = actualAddress
+            stringAddressMap[stringEntry.id] = actualAddress
+
+            // Encode string using Z-Machine text encoding
+            let encodedString = try encodeZString(stringEntry.content)
             stringData.append(encodedString)
+
+            // Update offset for next string
+            currentOffset += UInt32(encodedString.count)
+
+            // Word-align strings for better performance
+            if currentOffset % 2 != 0 {
+                stringData.append(0)
+                currentOffset += 1
+            }
         }
 
         return stringData
@@ -736,25 +872,42 @@ public class MemoryLayoutManager {
 
     private func generatePropertyTables() throws -> Data {
         var propertyData = Data()
-        var currentAddress = staticMemoryBase + calculateObjectTableSize()
+        // Property tables start after the object table in static memory
+        var currentOffset = calculateObjectTableSize()
+
+        print("DEBUG: Generating property tables")
+        print("       Object table size: \(calculateObjectTableSize())")
+        print("       Starting property offset: \(currentOffset)")
+        print("       Number of objects: \(objectTable.count)")
 
         // Generate property table for each object
         for (objectIndex, object) in objectTable.enumerated() {
-            let propertyTable = try generatePropertyTable(for: object)
+            if object.properties.isEmpty {
+                // Object has no properties - set property table address to 0
+                print("       Object \(object.name): No properties, setting address to 0")
+                objectTable[objectIndex].propertyTableAddress = 0
+            } else {
+                // Object has properties - generate property table
+                let propertyTable = try generatePropertyTable(for: object)
 
-            // Update object's property table address
-            objectTable[objectIndex].propertyTableAddress = UInt16(currentAddress)
+                print("       Object \(object.name): Properties found, setting address to \(currentOffset)")
+                print("       Generated property table size: \(propertyTable.count) bytes")
 
-            propertyData.append(propertyTable)
-            currentAddress += UInt32(propertyTable.count)
+                // Update object's property table address (offset within static memory)
+                objectTable[objectIndex].propertyTableAddress = UInt16(currentOffset)
 
-            // Ensure word alignment
-            if propertyData.count % 2 != 0 {
-                propertyData.append(0)
-                currentAddress += 1
+                propertyData.append(propertyTable)
+                currentOffset += UInt32(propertyTable.count)
+
+                // Ensure word alignment
+                if propertyData.count % 2 != 0 {
+                    propertyData.append(0)
+                    currentOffset += 1
+                }
             }
         }
 
+        print("       Total property data size: \(propertyData.count) bytes")
         return propertyData
     }
 

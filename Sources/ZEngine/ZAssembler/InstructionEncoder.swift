@@ -89,56 +89,142 @@ public class InstructionEncoder {
 
     private func mapOpcodeToZMachine(_ opcode: String) throws -> UInt8 {
         // Map ZAP opcodes to Z-Machine opcodes based on version
+        // Reference: Z-Machine Standards Document v1.0, Section 14
+
         switch opcode.uppercased() {
-        // 2OP instructions
-        case "ADD": return 0x14
-        case "SUB": return 0x15
-        case "MUL": return 0x16
-        case "DIV": return 0x17
-        case "MOD": return 0x18
-        case "EQUAL?": return 0x01
-        case "LESS?": return 0x02
-        case "GRTR?": return 0x03
-        case "SET": return 0x0D
-        case "MOVE": return 0x0E
-        case "GET": return 0x0F
-        case "PUT": return 0x10
-        case "GETP": return 0x11
-        case "PUTP": return 0x12
-        case "FSET": return 0x0B
-        case "FCLEAR": return 0x0C
 
-        // 1OP instructions
-        case "ZERO?": return 0x80
-        case "NEXT?": return 0x81
-        case "FIRST?": return 0x82
-        case "LOC": return 0x83
-        case "REMOVE": return 0x84
-        case "PRINTN": return 0x85
-        case "RETURN": return 0x8B
-        case "JUMP": return 0x8C
+        // ===== 2OP Instructions (Long Form: 0x00-0x1F) =====
+        case "JE", "EQUAL?": return 0x01      // Jump if equal
+        case "JL", "LESS?": return 0x02       // Jump if less than
+        case "JG", "GRTR?": return 0x03       // Jump if greater than
+        case "JIN": return 0x06               // Jump if object in object
+        case "TEST": return 0x07              // Test bitmap
+        case "OR": return 0x08                // Bitwise OR
+        case "AND": return 0x09               // Bitwise AND
+        case "TEST_ATTR", "FSET?": return 0x0A  // Test attribute
+        case "SET_ATTR", "FSET": return 0x0B    // Set attribute
+        case "CLEAR_ATTR", "FCLEAR": return 0x0C // Clear attribute
+        case "STORE": return 0x0D             // Store variable
+        case "INSERT_OBJ": return 0x0E        // Insert object into object
+        case "LOADW": return 0x0F             // Load word from array
+        case "LOADB": return 0x10             // Load byte from array
+        case "GET_PROP": return 0x11          // Get property value
+        case "GET_PROP_ADDR": return 0x12     // Get property address
+        case "GET_NEXT_PROP": return 0x13     // Get next property number
+        case "ADD": return 0x14               // Addition
+        case "SUB": return 0x15               // Subtraction
+        case "MUL": return 0x16               // Multiplication
+        case "DIV": return 0x17               // Division
+        case "MOD": return 0x18               // Modulo
+        case "SET_COLOUR": return 0x1B        // Set text colors (V5+)
+        case "THROW": return 0x1C             // Throw to catch (V5+)
 
-        // 0OP instructions
-        case "RTRUE": return 0xB0
-        case "RFALSE": return 0xB1
-        case "PRINTI": return 0xB2
-        case "PRINTR": return 0xB3
-        case "CRLF": return 0xBB
-        case "QUIT": return 0xBA
+        // ===== 1OP Instructions (Short Form: 0x80-0x8F base) =====
+        case "JZ", "ZERO?": return 0x80       // Jump if zero
+        case "GET_SIBLING", "NEXT?": return 0x81  // Get sibling object
+        case "GET_CHILD", "FIRST?": return 0x82   // Get child object
+        case "GET_PARENT", "LOC": return 0x83     // Get parent object
+        case "GET_PROP_LEN": return 0x84      // Get property length
+        case "INC": return 0x85               // Increment variable
+        case "DEC": return 0x86               // Decrement variable
+        case "PRINT_ADDR": return 0x87        // Print string at address
+        case "REMOVE_OBJ", "REMOVE": return 0x89  // Remove object from tree
+        case "PRINT_OBJ", "PRINTN": return 0x8A   // Print object short name
+        case "RET", "RETURN": return 0x8B     // Return from routine
+        case "JUMP": return 0x8C              // Unconditional jump
+        case "PRINT_PADDR": return 0x8D       // Print string at packed address
+        case "LOAD": return 0x8E              // Load variable
+        case "CALL_1N": return 0x8F           // Call routine, discard result (V5+)
 
-        // VAR instructions
-        case "CALL": return 0xE0
-        case "STOREW": return 0xE1
-        case "STOREB": return 0xE2
-        case "LOADW": return 0xE3
-        case "LOADB": return 0xE4
+        // ===== 0OP Instructions (Short Form: 0xB0-0xBF) =====
+        case "RTRUE": return 0xB0             // Return true
+        case "RFALSE": return 0xB1            // Return false
+        case "PRINT", "PRINTI": return 0xB2       // Print literal string
+        case "PRINT_RET", "PRINTR": return 0xB3   // Print literal string and return
+        case "NOP": return 0xB4               // No operation (V4+)
+        case "SAVE": return 0xB5              // Save game (V1-3: branch, V4+: store)
+        case "RESTORE": return 0xB6           // Restore game (V1-3: branch, V4+: store)
+        case "RESTART": return 0xB7           // Restart game
+        case "RET_POPPED": return 0xB8        // Return popped value
+        case "POP": return 0xB9               // Pop from stack (V1)/catch (V5+)
+        case "QUIT": return 0xBA              // Quit game
+        case "NEW_LINE", "CRLF": return 0xBB  // Print newline
+        case "SHOW_STATUS": return 0xBC       // Show status line (V3)
+        case "VERIFY": return 0xBD            // Verify story file integrity
+        case "EXTENDED": return 0xBE          // Extended opcode follows (V5+)
+        case "PIRACY": return 0xBF            // Piracy check (V5+)
 
-        // Version-specific instructions
-        case "SOUND":
-            if version.rawValue >= 4 {
-                return 0xE5
+        // ===== VAR Instructions (Variable Form: 0xE0-0xFF) =====
+        case "CALL", "CALL_VS": return 0xE0   // Call routine with variable args
+        case "STOREW": return 0xE1            // Store word in array
+        case "STOREB": return 0xE2            // Store byte in array
+        case "PUT_PROP": return 0xE3          // Set property value
+        case "SREAD", "READ": return 0xE4     // Read line of input (SREAD v1-4, READ v5+)
+        case "PRINT_CHAR": return 0xE5        // Print character
+        case "PRINT_NUM", "PRINTD": return 0xE6   // Print signed number
+        case "RANDOM": return 0xE7            // Random number generator
+        case "PUSH": return 0xE8              // Push onto stack
+        case "PULL": return 0xE9              // Pull from stack
+        case "SPLIT_WINDOW": return 0xEA      // Split screen window (V3+)
+        case "SET_WINDOW": return 0xEB        // Set current window (V3+)
+        case "CALL_VS2": return 0xEC          // Call routine, up to 7 args (V4+)
+        case "ERASE_WINDOW": return 0xED      // Clear window (V4+)
+        case "ERASE_LINE": return 0xEE        // Clear line in window (V4+)
+        case "SET_CURSOR": return 0xEF        // Set cursor position (V4+)
+        case "GET_CURSOR": return 0xF0        // Get cursor position (V4+)
+        case "SET_TEXT_STYLE": return 0xF1    // Set text style (V4+)
+        case "BUFFER_MODE": return 0xF2       // Set buffering mode (V4+)
+        case "OUTPUT_STREAM": return 0xF3     // Select output streams (V3+)
+        case "INPUT_STREAM": return 0xF4      // Select input stream (V3+)
+        case "SOUND_EFFECT": return 0xF5      // Play sound effect (V3+)
+        case "READ_CHAR": return 0xF6         // Read single character (V4+)
+        case "SCAN_TABLE": return 0xF7        // Scan table for value (V4+)
+        case "NOT": return 0xF8               // Bitwise complement (V5+)
+        case "CALL_VN": return 0xF9           // Call routine, discard result (V5+)
+        case "CALL_VN2": return 0xFA          // Call routine, up to 7 args, discard result (V5+)
+        case "TOKENISE": return 0xFB          // Tokenize text (V5+)
+        case "ENCODE_TEXT": return 0xFC       // Encode text (V5+)
+        case "COPY_TABLE": return 0xFD        // Copy table (V5+)
+        case "PRINT_TABLE": return 0xFE       // Print table (V5+)
+        case "CHECK_ARG_COUNT": return 0xFF   // Check argument count (V5+)
+
+        // ===== Version-Specific Instructions =====
+        case "DEC_CHK":
+            guard version.rawValue >= 4 else {
+                throw AssemblyError.versionMismatch(instruction: "DEC_CHK", version: Int(version.rawValue), location: SourceLocation(file: "assembly", line: 0, column: 0))
             }
-            throw AssemblyError.versionMismatch(instruction: "SOUND", version: Int(version.rawValue), location: SourceLocation(file: "assembly", line: 0, column: 0))
+            return 0x04
+
+        case "INC_CHK":
+            guard version.rawValue >= 4 else {
+                throw AssemblyError.versionMismatch(instruction: "INC_CHK", version: Int(version.rawValue), location: SourceLocation(file: "assembly", line: 0, column: 0))
+            }
+            return 0x05
+
+        case "CALL_2S":
+            guard version.rawValue >= 4 else {
+                throw AssemblyError.versionMismatch(instruction: "CALL_2S", version: Int(version.rawValue), location: SourceLocation(file: "assembly", line: 0, column: 0))
+            }
+            return 0x19
+
+        case "CALL_1S":
+            guard version.rawValue >= 4 else {
+                throw AssemblyError.versionMismatch(instruction: "CALL_1S", version: Int(version.rawValue), location: SourceLocation(file: "assembly", line: 0, column: 0))
+            }
+            return 0x88
+
+        case "CALL_2N":
+            guard version.rawValue >= 5 else {
+                throw AssemblyError.versionMismatch(instruction: "CALL_2N", version: Int(version.rawValue), location: SourceLocation(file: "assembly", line: 0, column: 0))
+            }
+            return 0x1A
+
+        case "SOUND":
+            // SOUND is an alias for SOUND_EFFECT in V3+
+            guard version.rawValue >= 3 else {
+                throw AssemblyError.versionMismatch(instruction: "SOUND", version: Int(version.rawValue), location: SourceLocation(file: "assembly", line: 0, column: 0))
+            }
+            return 0xF5  // SOUND_EFFECT
 
         default:
             throw AssemblyError.invalidInstruction(opcode, location: SourceLocation(file: "assembly", line: 0, column: 0))

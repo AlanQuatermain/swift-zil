@@ -130,9 +130,11 @@ public class ZMachine {
         try setupMemoryRegions()
         try loadGameData()
 
-        // Set initial PC to start of high memory
-        programCounter = header.initialPC
+        // Reset VM state but preserve important header values
         setupInitialState()
+
+        // Set initial PC from header AFTER resetting state
+        programCounter = unpackRoutineAddress(header.initialPC)
     }
 
     private func parseHeader() throws {
@@ -177,10 +179,14 @@ public class ZMachine {
         try loadGlobals()
 
         // Load object tree from static memory
-        try objectTree.load(from: staticMemory, version: version, objectTableAddress: header.objectTableAddress)
+        // Convert absolute object table address to offset within static memory
+        let objectTableOffset = header.objectTableAddress - header.staticMemoryBase
+        try objectTree.load(from: staticMemory, version: version, objectTableAddress: UInt32(objectTableOffset), staticMemoryBase: header.staticMemoryBase)
 
         // Load dictionary from static memory
-        try dictionary.load(from: staticMemory, dictionaryAddress: header.dictionaryAddress)
+        // Convert absolute dictionary address to offset within static memory
+        let dictionaryOffset = header.dictionaryAddress - header.staticMemoryBase
+        try dictionary.load(from: staticMemory, dictionaryAddress: UInt32(dictionaryOffset))
     }
 
     private func loadGlobals() throws {
@@ -363,11 +369,50 @@ public class ZMachine {
     }
 
     /// Restart the game
-    public func restart() {
+    public func restart() throws {
+        // Reset VM state
         setupInitialState()
-        programCounter = header.initialPC
-        // Reset memory to initial state
-        // TODO: Implement proper restart
+        programCounter = unpackRoutineAddress(header.initialPC)
+
+        // Reset dynamic memory to initial state from story file
+        let dynamicSize = Int(staticMemoryBase)
+        guard dynamicSize <= storyData.count else {
+            throw RuntimeError.corruptedStoryFile("Invalid dynamic memory size during restart", location: SourceLocation.unknown)
+        }
+        dynamicMemory = storyData.subdata(in: 0..<dynamicSize)
+
+        // Reload global variables from story file
+        try loadGlobals()
+
+        // Reload object tree to reset all object states
+        let objectTableOffset = header.objectTableAddress - header.staticMemoryBase
+        try objectTree.load(from: staticMemory, version: version, objectTableAddress: UInt32(objectTableOffset), staticMemoryBase: header.staticMemoryBase)
+
+        // Reload dictionary (though it shouldn't change)
+        let dictionaryOffset = header.dictionaryAddress - header.staticMemoryBase
+        try dictionary.load(from: staticMemory, dictionaryAddress: UInt32(dictionaryOffset))
+    }
+
+    // MARK: - Address Unpacking
+
+    /// Unpack a routine address from the story file header format
+    ///
+    /// Z-Machine routine addresses in headers are packed (divided by version-specific scale factor).
+    /// This method unpacks them back to actual byte addresses.
+    ///
+    /// - Parameter packedAddress: The packed address from the story file
+    /// - Returns: The actual byte address in memory
+    private func unpackRoutineAddress(_ packedAddress: UInt32) -> UInt32 {
+        let scaleFactor: UInt32
+        switch version {
+        case .v3:
+            scaleFactor = 2
+        case .v4, .v5:
+            scaleFactor = 4
+        case .v6, .v7, .v8:
+            scaleFactor = 8
+        }
+        return packedAddress * scaleFactor
     }
 }
 

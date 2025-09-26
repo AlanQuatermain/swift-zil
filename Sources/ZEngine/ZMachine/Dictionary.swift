@@ -26,7 +26,7 @@ public class Dictionary {
     ///
     /// - Parameters:
     ///   - data: Static memory data containing dictionary
-    ///   - dictionaryAddress: Address of dictionary in static memory
+    ///   - dictionaryAddress: Byte offset of dictionary within the provided data (not absolute story file address)
     /// - Throws: RuntimeError for corrupted dictionary
     public func load(from data: Data, dictionaryAddress: UInt32) throws {
         entries.removeAll()

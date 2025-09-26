@@ -1,0 +1,7 @@
+<VERSION ZIP>
+
+<CONSTANT RELEASEID 1>
+
+<ROUTINE MAIN ()
+	<TELL "Hello, World!" CR>
+	<QUIT>>

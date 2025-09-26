@@ -15,22 +15,16 @@ struct ZAssemblerTests {
         let location = SourceLocation(file: "test", line: 1, column: 1)
 
         // Test RTRUE
-        let rtrueInstruction = ZAPInstruction(
-            opcode: "RTRUE",
-            operands: [],
-            resultTarget: nil,
-            branchTarget: nil
+        let rtrueInstruction = ZAPInstruction.testInstruction(
+            opcode: "RTRUE"
         )
 
         let rtrueEncoded = try encoder.encodeInstruction(rtrueInstruction, symbolTable: symbolTable, location: location)
         #expect(Array(rtrueEncoded) == [0xB0])
 
         // Test RFALSE
-        let rfalseInstruction = ZAPInstruction(
-            opcode: "RFALSE",
-            operands: [],
-            resultTarget: nil,
-            branchTarget: nil
+        let rfalseInstruction = ZAPInstruction.testInstruction(
+            opcode: "RFALSE"
         )
 
         let rfalseEncoded = try encoder.encodeInstruction(rfalseInstruction, symbolTable: symbolTable, location: location)
@@ -44,11 +38,9 @@ struct ZAssemblerTests {
         let location = SourceLocation(file: "test", line: 1, column: 1)
 
         // Test ZERO? with small constant
-        let zeroSmallInstruction = ZAPInstruction(
+        let zeroSmallInstruction = ZAPInstruction.testInstruction(
             opcode: "ZERO?",
-            operands: [.number(42)],
-            resultTarget: nil,
-            branchTarget: nil
+            operands: [.number(42)]
         )
 
         let zeroSmallEncoded = try encoder.encodeInstruction(zeroSmallInstruction, symbolTable: symbolTable, location: location)
@@ -62,11 +54,9 @@ struct ZAssemblerTests {
         let location = SourceLocation(file: "test", line: 1, column: 1)
 
         // Test EQUAL? with variable and small constant
-        let equalInstruction = ZAPInstruction(
+        let equalInstruction = ZAPInstruction.testInstruction(
             opcode: "EQUAL?",
-            operands: [.atom("X"), .number(42)],
-            resultTarget: nil,
-            branchTarget: nil
+            operands: [.atom("X"), .number(42)]
         )
 
         let equalEncoded = try encoder.encodeInstruction(equalInstruction, symbolTable: symbolTable, location: location)
@@ -187,11 +177,9 @@ struct ZAssemblerTests {
         let location = SourceLocation(file: "test", line: 1, column: 1)
 
         // SOUND instruction should only be available in V4+
-        let soundInstruction = ZAPInstruction(
+        let soundInstruction = ZAPInstruction.testInstruction(
             opcode: "SOUND",
-            operands: [.number(1)],
-            resultTarget: nil,
-            branchTarget: nil
+            operands: [.number(1)]
         )
 
         // Should throw error in V3
@@ -364,9 +352,21 @@ struct ZAssemblerTests {
 
 // MARK: - Test Helper Structures
 
-struct ZAPInstruction {
-    let opcode: String
-    let operands: [ZValue]
-    let resultTarget: String?
-    let branchTarget: String?
+// Test helper functions for creating ZAPInstructions from the main module
+extension ZAPInstruction {
+    static func testInstruction(
+        opcode: String,
+        operands: [ZValue] = [],
+        label: String? = nil,
+        branchTarget: String? = nil,
+        resultTarget: String? = nil
+    ) -> ZAPInstruction {
+        return ZAPInstruction(
+            opcode: opcode,
+            operands: operands,
+            label: label,
+            branchTarget: branchTarget,
+            resultTarget: resultTarget
+        )
+    }
 }

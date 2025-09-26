@@ -459,6 +459,12 @@ public class ZILParser {
         var elements: [ZILExpression] = []
 
         while !check(.rightAngle) && !isAtEnd {
+            // Skip comments within expressions
+            if case .lineComment = currentToken.type {
+                try advance()
+                continue
+            }
+
             elements.append(try parseExpressionInternal())
         }
 
@@ -475,6 +481,12 @@ public class ZILParser {
         var elements: [ZILExpression] = []
 
         while !check(.rightParen) && !isAtEnd {
+            // Skip comments within expressions
+            if case .lineComment = currentToken.type {
+                try advance()
+                continue
+            }
+
             elements.append(try parseExpressionInternal())
         }
 

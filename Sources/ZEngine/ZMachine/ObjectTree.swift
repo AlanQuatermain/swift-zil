@@ -25,9 +25,10 @@ public class ObjectTree {
     /// - Parameters:
     ///   - data: Static memory data containing object table
     ///   - version: Z-Machine version for structure layout
-    ///   - objectTableAddress: Address of object table in static memory
+    ///   - objectTableAddress: Byte offset of object table within the provided data (not absolute story file address)
+    ///   - staticMemoryBase: Absolute address of static memory base (for converting property table addresses)
     /// - Throws: RuntimeError for corrupted object table
-    public func load(from data: Data, version: ZMachineVersion, objectTableAddress: UInt32) throws {
+    public func load(from data: Data, version: ZMachineVersion, objectTableAddress: UInt32, staticMemoryBase: UInt32) throws {
         self.version = version
         objects.removeAll()
         propertyDefaults.removeAll()
@@ -36,7 +37,7 @@ public class ObjectTree {
 
         // Load property default table (31 words)
         for propertyNum in 1...31 {
-            guard offset + 1 < data.count else {
+            guard offset + 2 <= data.count else {
                 throw RuntimeError.corruptedStoryFile("Property defaults table truncated", location: SourceLocation.unknown)
             }
 
@@ -78,7 +79,7 @@ public class ObjectTree {
                 }
             }
 
-            let entry = try ObjectEntry(from: data, at: offset, objectNumber: objectNumber, version: version)
+            let entry = try ObjectEntry(from: data, at: offset, objectNumber: objectNumber, version: version, staticMemoryBase: staticMemoryBase)
             objects[objectNumber] = entry
 
             offset += objectSize
@@ -215,7 +216,7 @@ public struct ObjectEntry {
     private var properties: [UInt8: UInt16] = [:]
     private let version: ZMachineVersion
 
-    public init(from data: Data, at offset: Int, objectNumber: UInt16, version: ZMachineVersion) throws {
+    public init(from data: Data, at offset: Int, objectNumber: UInt16, version: ZMachineVersion, staticMemoryBase: UInt32) throws {
         self.objectNumber = objectNumber
         self.version = version
 
@@ -235,7 +236,9 @@ public struct ObjectEntry {
             parent = (UInt16(data[offset + 6]) << 8) | UInt16(data[offset + 7])
             sibling = (UInt16(data[offset + 8]) << 8) | UInt16(data[offset + 9])
             child = (UInt16(data[offset + 10]) << 8) | UInt16(data[offset + 11])
-            propertyTableAddress = (UInt16(data[offset + 12]) << 8) | UInt16(data[offset + 13])
+            let absolutePropertyTableAddress = (UInt16(data[offset + 12]) << 8) | UInt16(data[offset + 13])
+            // Convert absolute address to relative offset within static memory
+            propertyTableAddress = absolutePropertyTableAddress > 0 ? UInt16(absolutePropertyTableAddress - UInt16(staticMemoryBase)) : 0
         } else {
             // 32-bit attributes for v3
             attributes = 0
@@ -247,11 +250,115 @@ public struct ObjectEntry {
             parent = UInt16(data[offset + 4])
             sibling = UInt16(data[offset + 5])
             child = UInt16(data[offset + 6])
-            propertyTableAddress = (UInt16(data[offset + 7]) << 8) | UInt16(data[offset + 8])
+            let absolutePropertyTableAddress = (UInt16(data[offset + 7]) << 8) | UInt16(data[offset + 8])
+            // Convert absolute address to relative offset within static memory
+            propertyTableAddress = absolutePropertyTableAddress > 0 ? UInt16(absolutePropertyTableAddress - UInt16(staticMemoryBase)) : 0
         }
 
-        // Load properties from property table
-        // TODO: Implement property table parsing
+        // Load properties from property table if it exists
+        if propertyTableAddress > 0 {
+            try loadPropertiesFromTable(data: data)
+        }
+    }
+
+    /// Load properties from the object's property table
+    ///
+    /// Implements Z-Machine property table parsing according to the specification.
+    /// Property tables contain a short name followed by property entries in descending order.
+    ///
+    /// - Parameter data: The static memory data containing the property table
+    /// - Throws: RuntimeError for corrupted property table
+    private mutating func loadPropertiesFromTable(data: Data) throws {
+        let tableAddress = Int(propertyTableAddress)
+
+        // Debug output
+        print("DEBUG: Loading properties for object \(objectNumber)")
+        print("       Property table address: \(propertyTableAddress)")
+        print("       Static memory data size: \(data.count)")
+        print("       Table address as int: \(tableAddress)")
+
+        guard tableAddress < data.count else {
+            print("ERROR: Property table address \(tableAddress) >= data size \(data.count)")
+            throw RuntimeError.corruptedStoryFile("Property table address out of bounds", location: SourceLocation.unknown)
+        }
+
+        var offset = tableAddress
+
+        // Skip object short name (text length byte + encoded text)
+        guard offset < data.count else {
+            throw RuntimeError.corruptedStoryFile("Property table truncated at name length", location: SourceLocation.unknown)
+        }
+        let textLength = data[offset]
+        offset += 1 + Int(textLength) * 2 // Skip length byte + text words (2 bytes each)
+
+        // Parse property entries until we hit the end marker (property number 0)
+        while offset < data.count {
+            let header = data[offset]
+            offset += 1
+
+            // Check for end marker
+            if header == 0 { break }
+
+            let propertyNumber: UInt8
+            let propertySize: Int
+
+            if version.rawValue >= 4 {
+                // Version 4+ property format
+                if (header & 0x80) != 0 {
+                    // Long format: 1PPP PPPP followed by LLLL LLLL (size byte)
+                    propertyNumber = header & 0x3F // Bottom 6 bits (not 7 as incorrectly implemented before)
+                    guard offset < data.count else {
+                        throw RuntimeError.corruptedStoryFile("Property table truncated at size byte", location: SourceLocation.unknown)
+                    }
+                    let sizeField = data[offset]
+                    offset += 1
+
+                    // If size is 0, it means 64 bytes (special case)
+                    propertySize = sizeField == 0 ? 64 : Int(sizeField)
+                } else {
+                    // Short format: 01LL PPPP (length-1 in bits 5-6, property# in bottom 4 bits)
+                    propertyNumber = header & 0x1F // Bottom 5 bits
+                    propertySize = Int((header >> 5) & 0x03) + 1 // Bits 5-6, then add 1
+                }
+            } else {
+                // Version 3 property format: LLLL PPPP (size-1 in top 3 bits, property# in bottom 5 bits)
+                propertyNumber = header & 0x1F // Bottom 5 bits
+                let sizeField = (header >> 5) & 0x07 // Top 3 bits
+                propertySize = Int(sizeField) + 1
+            }
+
+            // Validate property number (1-31 for v3, 1-63 for v4+)
+            let maxProperty = version.rawValue >= 4 ? 63 : 31
+            guard propertyNumber > 0 && propertyNumber <= maxProperty else {
+                throw RuntimeError.corruptedStoryFile("Invalid property number \(propertyNumber)", location: SourceLocation.unknown)
+            }
+
+            // Read property data
+            guard offset + propertySize <= data.count else {
+                throw RuntimeError.corruptedStoryFile("Property data truncated", location: SourceLocation.unknown)
+            }
+            let propertyData = data.subdata(in: offset..<offset + propertySize)
+
+            // Convert property data to UInt16 value (Z-Machine properties are typically 1-2 bytes)
+            let propertyValue: UInt16
+            switch propertySize {
+            case 1:
+                propertyValue = UInt16(propertyData[0])
+            case 2:
+                propertyValue = (UInt16(propertyData[0]) << 8) | UInt16(propertyData[1])
+            default:
+                // For larger properties, store the first two bytes as the value
+                // (Full property data handling would require more complex storage)
+                if propertySize >= 2 {
+                    propertyValue = (UInt16(propertyData[0]) << 8) | UInt16(propertyData[1])
+                } else {
+                    propertyValue = 0
+                }
+            }
+
+            properties[propertyNumber] = propertyValue
+            offset += propertySize
+        }
     }
 
     /// Check if object has specific attribute set

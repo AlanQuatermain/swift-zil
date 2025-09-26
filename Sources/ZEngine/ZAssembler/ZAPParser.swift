@@ -6,6 +6,7 @@ public class ZAPParser {
 
     private var lines: [String] = []
     private var currentLine = 0
+    private var inObjectBlock = false  // Track object context for property parsing
 
     /// Parse ZAP source code into assembly statements
     ///
@@ -66,7 +67,23 @@ public class ZAPParser {
 
         // Handle directives (start with .)
         if line.hasPrefix(".") {
-            return try parseDirective(line, at: location)
+            let statement = try parseDirective(line, at: location)
+
+            // Update object context based on directive
+            if case .directive(let directive, _) = statement {
+                if directive.name.uppercased() == "OBJECT" {
+                    inObjectBlock = true
+                } else if directive.name.uppercased() == "ENDOBJECT" {
+                    inObjectBlock = false
+                }
+            }
+
+            return statement
+        }
+
+        // Handle object properties (indented lines within object blocks)
+        if inObjectBlock && (line.hasPrefix("\t") || line.hasPrefix("    ")) {
+            return try parseObjectProperty(line, at: location)
         }
 
         // Handle regular instructions
@@ -88,6 +105,25 @@ public class ZAPParser {
         )
 
         return .directive(directive, location)
+    }
+
+    private func parseObjectProperty(_ line: String, at location: SourceLocation) throws -> ZAPStatement {
+        // Remove indentation and parse as property assignment
+        let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parts = splitInstruction(trimmedLine)
+
+        guard parts.count >= 2 else {
+            throw AssemblyError.invalidInstruction("Invalid object property format: \(trimmedLine)", location: location)
+        }
+
+        let propertyName = parts[0].uppercased()
+        let propertyValueStr = parts[1]
+
+        // Parse property value
+        let propertyValue = try parseArgument(propertyValueStr)
+
+        let objectProperty = ZAPObjectProperty(name: propertyName, value: propertyValue)
+        return .objectProperty(objectProperty, location)
     }
 
     private func parseInstruction(_ line: String, at location: SourceLocation) throws -> ZAPStatement {
