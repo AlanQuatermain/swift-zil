@@ -1,4 +1,5 @@
 import ArgumentParser
+import Foundation
 import ZEngine
 import Logging
 
@@ -163,6 +164,81 @@ struct BuildCommand: ParsableCommand {
             print("Debug symbols enabled")
         }
         print("Optimization level: \(optimize)")
+        print()
+
+        // Validate Z-Machine version
+        guard let zmachineVersion = ZMachineVersion(rawValue: UInt8(version)) else {
+            print("Error: Invalid Z-Machine version: \(version). Supported versions: 3, 4, 5, 6, 8")
+            throw ExitCode.validationFailure
+        }
+
+        // Determine input file
+        let inputPath: String
+        if input == "." {
+            // Look for main ZIL file in current directory
+            let fileManager = FileManager.default
+            let currentDir = fileManager.currentDirectoryPath
+            let zilFiles = try fileManager.contentsOfDirectory(atPath: currentDir)
+                .filter { $0.hasSuffix(".zil") }
+
+            if zilFiles.isEmpty {
+                print("Error: No ZIL files found in current directory")
+                throw ExitCode.validationFailure
+            } else if zilFiles.count == 1 {
+                inputPath = zilFiles.first!
+            } else {
+                // Look for main.zil or use the first one
+                inputPath = zilFiles.first { $0 == "main.zil" } ?? zilFiles.first!
+            }
+            print("Using input file: \(inputPath)")
+        } else {
+            inputPath = input
+        }
+
+        // Determine output file
+        let outputPath: String
+        if let output = output {
+            outputPath = output
+        } else {
+            let baseName = URL(fileURLWithPath: inputPath).deletingPathExtension().lastPathComponent
+            if assemblyOnly {
+                outputPath = "\(baseName).zap"
+            } else {
+                outputPath = "\(baseName).z\(version)"
+            }
+            print("Using output file: \(outputPath)")
+        }
+
+        // Load and parse ZIL source
+        print("Reading ZIL source...")
+        let zilSource = try String(contentsOfFile: inputPath, encoding: .utf8)
+
+        print("Lexing and parsing...")
+        let lexer = ZILLexer(source: zilSource, filename: inputPath)
+        let parser = try ZILParser(lexer: lexer)
+        let declarations = try parser.parseProgram()
+
+        print("Generating ZAP assembly...")
+        let symbolTable = SymbolTableManager()
+        var codeGenerator = ZAPCodeGenerator(symbolTable: symbolTable, version: zmachineVersion, optimizationLevel: optimize)
+        let zapCode = try codeGenerator.generateCode(from: declarations)
+
+        if assemblyOnly {
+            // Write ZAP assembly file
+            print("Writing ZAP assembly to \(outputPath)...")
+            try zapCode.write(toFile: outputPath, atomically: true, encoding: .utf8)
+            print("Assembly generation complete!")
+        } else {
+            // Assemble to bytecode
+            print("Assembling to Z-Machine bytecode...")
+            let assembler = ZAssembler(version: zmachineVersion)
+            let bytecode = try assembler.assemble(zapCode)
+
+            // Write story file
+            print("Writing story file to \(outputPath)...")
+            try bytecode.write(to: URL(fileURLWithPath: outputPath))
+            print("Build complete!")
+        }
     }
 }
 
