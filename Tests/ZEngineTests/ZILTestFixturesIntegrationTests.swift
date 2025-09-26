@@ -167,13 +167,20 @@ struct ZILTestFixturesIntegration {
         print("File read back size: \(readBack.count) bytes")
         print("Data matches: \(readBack == bytecode)")
 
-        // Try to load in VM with detailed error reporting
+        // Try to load in VM with detailed step-by-step error reporting
         do {
             let vm = ZMachine()
+            print("1. Loading story file data...")
             try vm.loadStoryFile(from: storyFile)
             print("✅ VM loading succeeded!")
+        } catch let error as RuntimeError {
+            print("❌ VM loading failed with RuntimeError:")
+            print("   Type: \(error)")
+            print("   Location: \(error.location)")
+            throw error
         } catch {
-            print("❌ VM loading failed: \(error)")
+            print("❌ VM loading failed with error: \(type(of: error))")
+            print("   Description: \(error)")
             throw error
         }
 

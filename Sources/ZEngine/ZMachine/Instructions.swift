@@ -155,7 +155,7 @@ extension ZMachine {
             }
 
         case 0x09: // REMOVE_OBJ
-            objectTree.moveObject(UInt16(operand), toParent: 0)
+            try objectTree.moveObject(UInt16(operand), toParent: 0)
 
         case 0x0A: // PRINT_OBJ
             // Print object short description (property 1)
@@ -247,16 +247,16 @@ extension ZMachine {
             try branchOnCondition(hasAttribute)
 
         case 0x0B: // SET_ATTR
-            objectTree.setAttribute(UInt16(operand1), attribute: UInt8(operand2), value: true)
+            try objectTree.setAttribute(UInt16(operand1), attribute: UInt8(operand2), value: true)
 
         case 0x0C: // CLEAR_ATTR
-            objectTree.setAttribute(UInt16(operand1), attribute: UInt8(operand2), value: false)
+            try objectTree.setAttribute(UInt16(operand1), attribute: UInt8(operand2), value: false)
 
         case 0x0D: // STORE
             try writeVariable(UInt8(operand1), value: operand2)
 
         case 0x0E: // INSERT_OBJ
-            objectTree.moveObject(UInt16(operand1), toParent: UInt16(operand2))
+            try objectTree.moveObject(UInt16(operand1), toParent: UInt16(operand2))
 
         case 0x0F: // LOADW
             let address = UInt32(operand1) + UInt32(operand2) * 2
@@ -380,7 +380,7 @@ extension ZMachine {
             guard operands.count >= 3 else {
                 throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
             }
-            objectTree.setProperty(UInt16(operands[0]), property: UInt8(operands[1]), value: UInt16(bitPattern: operands[2]))
+            try objectTree.setProperty(UInt16(operands[0]), property: UInt8(operands[1]), value: UInt16(bitPattern: operands[2]))
 
         case 0x04: // READ (v1-3) / SREAD (v4+)
             // Text input - simplified

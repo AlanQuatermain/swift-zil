@@ -356,35 +356,3 @@ extension ZMachine {
         return result
     }
 }
-
-// MARK: - Address Packing/Unpacking
-extension ZMachine {
-
-    /// Address type for unpacking
-    enum AddressType {
-        case routine
-        case string
-        case data
-    }
-
-    /// Unpack a packed address based on Z-Machine version
-    func unpackAddress(_ packedAddress: UInt32, type: AddressType) -> UInt32 {
-        switch version {
-        case .v3:
-            return packedAddress * 2
-        case .v4, .v5:
-            return packedAddress * 4
-        case .v6, .v7:
-            switch type {
-            case .routine:
-                return packedAddress * 4 + header.routineOffset
-            case .string:
-                return packedAddress * 4 + header.stringOffset
-            case .data:
-                return packedAddress * 4
-            }
-        case .v8:
-            return packedAddress * 8
-        }
-    }
-}

@@ -181,11 +181,21 @@ public class ZMachine {
         // Load object tree from static memory
         // Convert absolute object table address to offset within static memory
         let objectTableOffset = header.objectTableAddress - header.staticMemoryBase
-        try objectTree.load(from: staticMemory, version: version, objectTableAddress: UInt32(objectTableOffset), staticMemoryBase: header.staticMemoryBase)
+
+        guard objectTableOffset < UInt32(staticMemory.count) else {
+            throw RuntimeError.corruptedStoryFile("Object table offset \(objectTableOffset) exceeds static memory size \(staticMemory.count)", location: SourceLocation.unknown)
+        }
+
+        try objectTree.load(from: staticMemory, version: version, objectTableAddress: UInt32(objectTableOffset), staticMemoryBase: header.staticMemoryBase, dictionaryAddress: header.dictionaryAddress)
 
         // Load dictionary from static memory
         // Convert absolute dictionary address to offset within static memory
         let dictionaryOffset = header.dictionaryAddress - header.staticMemoryBase
+
+        guard dictionaryOffset < UInt32(staticMemory.count) else {
+            throw RuntimeError.corruptedStoryFile("Dictionary offset \(dictionaryOffset) exceeds static memory size \(staticMemory.count)", location: SourceLocation.unknown)
+        }
+
         try dictionary.load(from: staticMemory, dictionaryAddress: UInt32(dictionaryOffset))
     }
 
@@ -260,6 +270,7 @@ public class ZMachine {
             guard address < UInt32(dynamicMemory.count) else {
                 throw RuntimeError.invalidMemoryAccess(Int(address), location: SourceLocation.unknown)
             }
+            // Safe conversion - we've validated address is within range
             return dynamicMemory[Int(address)]
         } else if address < highMemoryBase {
             // Static memory
@@ -267,6 +278,7 @@ public class ZMachine {
             guard staticOffset < UInt32(staticMemory.count) else {
                 throw RuntimeError.invalidMemoryAccess(Int(address), location: SourceLocation.unknown)
             }
+            // Safe conversion - we've validated offset is within range
             return staticMemory[Int(staticOffset)]
         } else {
             // High memory
@@ -274,6 +286,7 @@ public class ZMachine {
             guard highOffset < UInt32(highMemory.count) else {
                 throw RuntimeError.invalidMemoryAccess(Int(address), location: SourceLocation.unknown)
             }
+            // Safe conversion - we've validated offset is within range
             return highMemory[Int(highOffset)]
         }
     }
@@ -293,6 +306,7 @@ public class ZMachine {
             throw RuntimeError.invalidMemoryAccess(Int(address), location: SourceLocation.unknown)
         }
 
+        // Safe conversion - we've validated address is within dynamic memory range
         dynamicMemory[Int(address)] = value
     }
 
@@ -302,6 +316,11 @@ public class ZMachine {
     /// - Returns: Word value at the address
     /// - Throws: RuntimeError for invalid memory access
     public func readWord(at address: UInt32) throws -> UInt16 {
+        // Check for overflow before adding 1
+        guard address < UInt32.max else {
+            throw RuntimeError.invalidMemoryAccess(Int(address), location: SourceLocation.unknown)
+        }
+
         let highByte = try readByte(at: address)
         let lowByte = try readByte(at: address + 1)
         return (UInt16(highByte) << 8) | UInt16(lowByte)
@@ -314,6 +333,11 @@ public class ZMachine {
     ///   - address: Memory address to write to
     /// - Throws: RuntimeError for invalid memory access or write to read-only memory
     public func writeWord(_ value: UInt16, at address: UInt32) throws {
+        // Check for overflow before adding 1
+        guard address < UInt32.max else {
+            throw RuntimeError.invalidMemoryAccess(Int(address), location: SourceLocation.unknown)
+        }
+
         try writeByte(UInt8((value >> 8) & 0xFF), at: address)
         try writeByte(UInt8(value & 0xFF), at: address + 1)
     }
@@ -395,24 +419,48 @@ public class ZMachine {
 
     // MARK: - Address Unpacking
 
-    /// Unpack a routine address from the story file header format
+    /// Address type for unpacking
+    enum AddressType {
+        case routine
+        case string
+        case data
+    }
+
+    /// Unpack a packed address based on Z-Machine version and type
     ///
-    /// Z-Machine routine addresses in headers are packed (divided by version-specific scale factor).
-    /// This method unpacks them back to actual byte addresses.
+    /// Z-Machine addresses are packed (divided by version-specific scale factors) to allow
+    /// addressing larger memory spaces. This method unpacks them back to actual byte addresses.
     ///
-    /// - Parameter packedAddress: The packed address from the story file
+    /// - Parameters:
+    ///   - packedAddress: The packed address from the story file
+    ///   - type: The type of address (affects v6/v7 offset calculation)
     /// - Returns: The actual byte address in memory
-    private func unpackRoutineAddress(_ packedAddress: UInt32) -> UInt32 {
-        let scaleFactor: UInt32
+    internal func unpackAddress(_ packedAddress: UInt32, type: AddressType = .data) -> UInt32 {
         switch version {
         case .v3:
-            scaleFactor = 2
+            return packedAddress * 2
         case .v4, .v5:
-            scaleFactor = 4
-        case .v6, .v7, .v8:
-            scaleFactor = 8
+            return packedAddress * 4
+        case .v6, .v7:
+            switch type {
+            case .routine:
+                return packedAddress * 4 + header.routineOffset
+            case .string:
+                return packedAddress * 4 + header.stringOffset
+            case .data:
+                return packedAddress * 4
+            }
+        case .v8:
+            return packedAddress * 8
         }
-        return packedAddress * scaleFactor
+    }
+
+    /// Unpack a routine address from the story file header format
+    ///
+    /// - Parameter packedAddress: The packed address from the story file header
+    /// - Returns: The actual byte address in memory
+    private func unpackRoutineAddress(_ packedAddress: UInt32) -> UInt32 {
+        return unpackAddress(packedAddress, type: .routine)
     }
 }
 
