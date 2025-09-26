@@ -88,9 +88,9 @@ struct ZAssemblerTests {
         let global2 = layoutManager.allocateGlobal("MOVES")
         let global3 = layoutManager.allocateGlobal("WINNER")
 
-        #expect(global1 == 0x10)  // First global at 0x10 (header + 0)
-        #expect(global2 == 0x12)  // Second global at 0x12 (2 bytes later)
-        #expect(global3 == 0x14)  // Third global at 0x14 (2 bytes later)
+        #expect(global1 == 64)  // First global at 64 (global table start)
+        #expect(global2 == 66)  // Second global at 66 (2 bytes later)
+        #expect(global3 == 68)  // Third global at 68 (2 bytes later)
     }
 
     @Test("Object allocation and property tables")

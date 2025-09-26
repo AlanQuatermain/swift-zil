@@ -1034,10 +1034,10 @@ struct ZAPCodeGeneratorTests {
 
         // Verify complete routine structure
         #expect(result.contains("\t.FUNCT\tLANTERN-F"))
-        #expect(result.contains("VERB?\tTAKE"))
+        #expect(result.contains("EQUAL?\t'PRSA,TAKE"))
         #expect(result.contains("MOVE\tLANTERN,PLAYER"))
         #expect(result.contains("PRINTI\t\"Taken.\""))
-        #expect(result.contains("VERB?\tLIGHT"))
+        #expect(result.contains("EQUAL?\t'PRSA,LIGHT"))
         #expect(result.contains("FSET\tLANTERN,ONBIT"))
         #expect(result.contains("PRINTI\t\"The lantern is now on.\""))
         #expect(result.contains("RTRUE"))

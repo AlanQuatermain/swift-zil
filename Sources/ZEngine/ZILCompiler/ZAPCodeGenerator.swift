@@ -1988,8 +1988,7 @@ public struct ZAPCodeGenerator {
         context.loopStack.append(endLabel)
         defer { context.loopStack.removeLast() }
 
-        // Handle variable initialization list (first operand)
-        // In ZIL, first operand is always the variable list, even if empty
+        // REPEAT processes all operands as loop body actions
         if operands.isEmpty {
             // No operands at all - this is unusual but handle gracefully
             result.append("\(loopLabel):")
@@ -1998,8 +1997,8 @@ public struct ZAPCodeGenerator {
             return result
         }
 
-        // Skip the first operand (variable initialization list) and process loop body
-        let bodyOperands = Array(operands.dropFirst())
+        // Process all operands as loop body
+        let bodyOperands = operands
 
         result.append("\(loopLabel):")
 

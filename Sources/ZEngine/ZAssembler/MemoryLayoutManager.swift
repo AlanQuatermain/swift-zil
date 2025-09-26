@@ -91,7 +91,8 @@ public class MemoryLayoutManager {
         // Find next available global slot
         for i in 0..<globalTable.count {
             if globalTable[i] == 0 {
-                let address = 0x10 + UInt32(i * 2) // Globals start at 0x10, 2 bytes each
+                // Globals start at address 64 (after header), 2 bytes each
+                let address = UInt32(calculateGlobalTableAddress()) + UInt32(i * 2)
                 globalTable[i] = 1 // Mark as allocated
                 return address
             }

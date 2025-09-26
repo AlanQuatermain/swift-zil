@@ -59,7 +59,7 @@ public class InstructionEncoder {
         let operands = instruction.operands
 
         // Determine instruction form and encode opcode
-        try encodeOpcode(opcode, operandCount: operands.count)
+        try encodeOpcode(opcode, operands: operands)
 
         // Add operand type byte for variable form instructions
         if needsOperandTypeByte(opcode) {
@@ -176,7 +176,7 @@ public class InstructionEncoder {
         case "BUFFER_MODE": return 0xF2       // Set buffering mode (V4+)
         case "OUTPUT_STREAM": return 0xF3     // Select output streams (V3+)
         case "INPUT_STREAM": return 0xF4      // Select input stream (V3+)
-        case "SOUND_EFFECT": return 0xF5      // Play sound effect (V3+)
+        case "SOUND_EFFECT": return 0xF5      // Play sound effect (V4+)
         case "READ_CHAR": return 0xF6         // Read single character (V4+)
         case "SCAN_TABLE": return 0xF7        // Scan table for value (V4+)
         case "NOT": return 0xF8               // Bitwise complement (V5+)
@@ -220,8 +220,8 @@ public class InstructionEncoder {
             return 0x1A
 
         case "SOUND":
-            // SOUND is an alias for SOUND_EFFECT in V3+
-            guard version.rawValue >= 3 else {
+            // SOUND is an alias for SOUND_EFFECT in V4+
+            guard version.rawValue >= 4 else {
                 throw AssemblyError.versionMismatch(instruction: "SOUND", version: Int(version.rawValue), location: SourceLocation(file: "assembly", line: 0, column: 0))
             }
             return 0xF5  // SOUND_EFFECT
@@ -231,16 +231,15 @@ public class InstructionEncoder {
         }
     }
 
-    private func encodeOpcode(_ opcode: UInt8, operandCount: Int) throws {
-        // Determine instruction form based on opcode value and operand count
+    private func encodeOpcode(_ opcode: UInt8, operands: [ZValue]) throws {
+        // Determine instruction form based on opcode value and encode with operand types
 
         if opcode >= 0xE0 {
-            // VAR form (0xC0-0xDF for 2OP VAR, 0xE0-0xFF for VAR)
+            // VAR form (0xE0-0xFF)
             output.append(opcode)
-            // Operand type byte will be added separately after determining operand types
 
         } else if opcode >= 0xC0 {
-            // Variable form 2OP instructions
+            // Variable form 2OP instructions (0xC0-0xDF)
             output.append(opcode)
 
         } else if opcode >= 0xB0 {
@@ -250,26 +249,33 @@ public class InstructionEncoder {
         } else if opcode >= 0x80 {
             // 1OP form (0x80-0xAF)
             // Encode operand type in bits 5-4 of opcode
-            var encodedOpcode = opcode
-            if operandCount > 0 {
-                // For now, assume small constant (type 01)
-                encodedOpcode = (opcode & 0x8F) | 0x30  // Set bits 5-4 to 01
+            var encodedOpcode = opcode & 0xCF  // Clear bits 5-4
+
+            if !operands.isEmpty {
+                let operandType = determineOperandType(operands[0])
+                encodedOpcode |= (operandType.rawValue << 4)
             }
             output.append(encodedOpcode)
 
         } else {
             // 2OP form (0x00-0x7F)
-            // Encode operand types in bits 6-5 (first operand) and bit 4 (second operand)
-            let encodedOpcode = opcode
+            // Encode operand types in bit 6 (first operand) and bit 5 (second operand)
+            var encodedOpcode = opcode
 
-            if operandCount >= 1 {
-                // First operand - assume small constant (bit 6=0)
-                // encodedOpcode already has this as 0
+            if operands.count >= 1 {
+                let operandType1 = determineOperandType(operands[0])
+                if operandType1 == .variable {
+                    encodedOpcode |= 0x40  // Set bit 6 for variable
+                }
+                // Small/large constants are 0, so no change needed
             }
 
-            if operandCount >= 2 {
-                // Second operand - assume small constant (bit 5=0)
-                // encodedOpcode already has this as 0
+            if operands.count >= 2 {
+                let operandType2 = determineOperandType(operands[1])
+                if operandType2 == .variable {
+                    encodedOpcode |= 0x20  // Set bit 5 for variable
+                }
+                // Small/large constants are 0, so no change needed
             }
 
             output.append(encodedOpcode)
