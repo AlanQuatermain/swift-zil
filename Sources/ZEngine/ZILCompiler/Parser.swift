@@ -34,6 +34,12 @@ public class ZILParser {
     /// Current token being examined
     private var currentToken: ZILToken
 
+    /// Current file path for relative inclusion resolution
+    private let currentFilePath: String?
+
+    /// Stack of included files to detect circular dependencies
+    private var includeStack: [String] = []
+
     /// Whether we've reached the end of the token stream
     private var isAtEnd: Bool {
         if case .endOfFile = currentToken.type {
@@ -46,10 +52,13 @@ public class ZILParser {
 
     /// Creates a new ZIL parser with the given lexer.
     ///
-    /// - Parameter lexer: The lexer to provide tokens from ZIL source code
+    /// - Parameters:
+    ///   - lexer: The lexer to provide tokens from ZIL source code
+    ///   - filePath: Optional path to the current file for relative inclusion resolution
     /// - Throws: `ParseError` if the lexer cannot provide the first token
-    public init(lexer: ZILLexer) throws {
+    public init(lexer: ZILLexer, filePath: String? = nil) throws {
         self.lexer = lexer
+        self.currentFilePath = filePath
         self.currentToken = try lexer.nextToken()
     }
 
@@ -67,7 +76,13 @@ public class ZILParser {
 
         while !isAtEnd {
             if let declaration = try parseDeclaration() {
-                declarations.append(declaration)
+                // Handle INSERT-FILE declarations by recursively including the referenced files
+                if case .insertFile(let insertFile) = declaration {
+                    let includedDeclarations = try processInsertFile(insertFile)
+                    declarations.append(contentsOf: includedDeclarations)
+                } else {
+                    declarations.append(declaration)
+                }
             }
         }
 
@@ -82,6 +97,101 @@ public class ZILParser {
     /// - Throws: `ParseError` for syntax errors
     public func parseExpression() throws -> ZILExpression {
         return try parseExpressionInternal()
+    }
+
+    // MARK: - File Inclusion Handling
+
+    /// Processes an INSERT-FILE declaration by recursively parsing the referenced file.
+    ///
+    /// This method handles file path resolution, circular dependency detection, and
+    /// recursive parsing of included ZIL files.
+    ///
+    /// - Parameter insertFile: The INSERT-FILE declaration to process
+    /// - Returns: Array of declarations from the included file
+    /// - Throws: `ParseError` for file system errors or circular dependencies
+    private func processInsertFile(_ insertFile: ZILInsertFileDeclaration) throws -> [ZILDeclaration] {
+        // Resolve the file path relative to the current file
+        let resolvedPath = try resolveIncludePath(insertFile.filename)
+
+        print("Including file: \(insertFile.filename) -> \(resolvedPath)")
+
+        // Check for circular dependencies
+        if includeStack.contains(resolvedPath) {
+            throw ParseError.circularInclude(path: resolvedPath, stack: includeStack, location: insertFile.location)
+        }
+
+        // Add to include stack for circular dependency detection
+        includeStack.append(resolvedPath)
+        defer { includeStack.removeLast() }
+
+        // Load and parse the included file
+        let includeSource = try String(contentsOfFile: resolvedPath, encoding: .utf8)
+        let includeLexer = ZILLexer(source: includeSource, filename: resolvedPath)
+        let includeParser = try ZILParser(lexer: includeLexer, filePath: resolvedPath)
+
+        return try includeParser.parseProgram()
+    }
+
+    /// Resolves an include file path relative to the current file path.
+    ///
+    /// - Parameter filename: The filename from the INSERT-FILE directive
+    /// - Returns: Absolute path to the included file
+    /// - Throws: `ParseError` if the file cannot be resolved or accessed
+    private func resolveIncludePath(_ filename: String) throws -> String {
+        // Generate potential filenames to try
+        let candidateFilenames = generateCandidateFilenames(filename)
+
+        // If we have a current file path, resolve relative to its directory
+        if let currentPath = currentFilePath {
+            let currentDir = (currentPath as NSString).deletingLastPathComponent
+
+            for candidate in candidateFilenames {
+                let resolvedPath = (currentDir as NSString).appendingPathComponent(candidate)
+                if FileManager.default.fileExists(atPath: resolvedPath) {
+                    return resolvedPath
+                }
+            }
+        }
+
+        // Fall back to treating as absolute or relative to working directory
+        for candidate in candidateFilenames {
+            if FileManager.default.fileExists(atPath: candidate) {
+                return candidate
+            }
+        }
+
+        // File not found
+        throw ParseError.fileNotFound(filename, currentPath: currentFilePath)
+    }
+
+    /// Generates candidate filenames to try for INSERT-FILE resolution.
+    ///
+    /// - Parameter filename: The original filename from INSERT-FILE
+    /// - Returns: Array of candidate filenames to try, in order of preference
+    private func generateCandidateFilenames(_ filename: String) -> [String] {
+        var candidates: [String] = []
+
+        // 1. Try exact filename as provided
+        candidates.append(filename)
+
+        // 2. Try lowercase version
+        let lowercaseFilename = filename.lowercased()
+        if lowercaseFilename != filename {
+            candidates.append(lowercaseFilename)
+        }
+
+        // 3. Try with .zil extension if not already present
+        let hasExtension = filename.contains(".")
+        if !hasExtension {
+            candidates.append(filename + ".zil")
+
+            // 4. Try lowercase with .zil extension
+            if lowercaseFilename != filename {
+                candidates.append(lowercaseFilename + ".zil")
+            }
+        }
+
+        return candidates
     }
 
     // MARK: - Private Parsing Methods
@@ -135,6 +245,14 @@ public class ZILParser {
             return .insertFile(try parseInsertFileDeclaration(startLocation: startLocation))
         case "VERSION":
             return .version(try parseVersionDeclaration(startLocation: startLocation))
+        case "PRINC":
+            return .princ(try parsePrincDeclaration(startLocation: startLocation))
+        case "SNAME":
+            return .sname(try parseSnameDeclaration(startLocation: startLocation))
+        case "SET":
+            return .set(try parseSetDeclaration(startLocation: startLocation))
+        case "DIRECTIONS":
+            return .directions(try parseDirectionsDeclaration(startLocation: startLocation))
         default:
             // Parse the full expression to catch any syntax errors
             var elements: [ZILExpression] = [.atom(keyword, startLocation)]
@@ -407,6 +525,85 @@ public class ZILParser {
         return ZILVersionDeclaration(version: version, location: startLocation)
     }
 
+    /// Parses a PRINC declaration.
+    private func parsePrincDeclaration(startLocation: SourceLocation) throws -> ZILPrincDeclaration {
+        try advance() // Skip PRINC keyword
+
+        let text = try parseExpressionInternal()
+
+        try consume(.rightAngle, "Expected '>' to close PRINC declaration")
+
+        // Execute compile-time print
+        if case .string(let message, _) = text {
+            print("PRINC: \(message)")
+        } else {
+            print("PRINC: <complex expression>")
+        }
+
+        return ZILPrincDeclaration(text: text, location: startLocation)
+    }
+
+    /// Parses a SNAME declaration.
+    private func parseSnameDeclaration(startLocation: SourceLocation) throws -> ZILSnameDeclaration {
+        try advance() // Skip SNAME keyword
+
+        guard case .string(let name) = currentToken.type else {
+            throw ParseError.expectedFilename(location: currentToken.location)
+        }
+        try advance()
+
+        try consume(.rightAngle, "Expected '>' to close SNAME declaration")
+
+        return ZILSnameDeclaration(name: name, location: startLocation)
+    }
+
+    /// Parses a SET declaration.
+    private func parseSetDeclaration(startLocation: SourceLocation) throws -> ZILSetDeclaration {
+        try advance() // Skip SET keyword
+
+        guard case .atom(let name) = currentToken.type else {
+            throw ParseError.expectedAtom(location: currentToken.location)
+        }
+        try advance()
+
+        let value = try parseExpressionInternal()
+
+        try consume(.rightAngle, "Expected '>' to close SET declaration")
+
+        return ZILSetDeclaration(name: name, value: value, location: startLocation)
+    }
+
+    /// Parses a DIRECTIONS declaration.
+    private func parseDirectionsDeclaration(startLocation: SourceLocation) throws -> ZILDirectionsDeclaration {
+        try advance() // Skip DIRECTIONS keyword
+
+        var directions: [String] = []
+
+        while !check(.rightAngle) && !isAtEnd {
+            // Skip comments
+            if case .lineComment = currentToken.type {
+                try advance()
+                continue
+            }
+
+            // Skip strings (comments in DIRECTIONS)
+            if case .string(_) = currentToken.type {
+                try advance()
+                continue
+            }
+
+            guard case .atom(let direction) = currentToken.type else {
+                throw ParseError.expectedAtom(location: currentToken.location)
+            }
+            directions.append(direction)
+            try advance()
+        }
+
+        try consume(.rightAngle, "Expected '>' to close DIRECTIONS declaration")
+
+        return ZILDirectionsDeclaration(directions: directions, location: startLocation)
+    }
+
     /// Parses expressions (S-expressions, literals, variables).
     private func parseExpressionInternal() throws -> ZILExpression {
         let location = currentToken.location
@@ -445,6 +642,9 @@ public class ZILParser {
 
         case .leftParen:
             return try parseParenthesesExpression()
+
+        case .indirection:
+            return try parseIndirectionExpression()
 
         default:
             throw ParseError.unexpectedToken(expected: "expression", found: currentToken.type, location: location)
@@ -493,6 +693,27 @@ public class ZILParser {
         try consume(.rightParen, "Expected ')' to close expression")
 
         return .list(elements, startLocation)
+    }
+
+    /// Parses an indirection expression starting with !.
+    private func parseIndirectionExpression() throws -> ZILExpression {
+        let startLocation = currentToken.location
+        try consume(.indirection, "Expected '!'")
+
+        // Parse the expression to be dereferenced
+        // Only atoms and global variables are valid targets for indirection
+        let targetExpression = try parseExpressionInternal()
+
+        // Validate that the target is a valid indirection target
+        switch targetExpression {
+        case .atom, .globalVariable:
+            // Valid indirection targets
+            break
+        default:
+            throw ParseError.invalidSyntax("Indirection (!) can only be applied to atoms or global variables", location: startLocation)
+        }
+
+        return .indirection(targetExpression, startLocation)
     }
 
     // MARK: - Token Navigation Utilities

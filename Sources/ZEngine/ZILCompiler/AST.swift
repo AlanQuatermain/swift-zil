@@ -13,7 +13,7 @@ public protocol ZILNode: Sendable {
 ///
 /// Expressions are the core building blocks of ZIL code, representing
 /// everything from literal values to complex function calls and variable references.
-public enum ZILExpression: Sendable, Equatable {
+public indirect enum ZILExpression: Sendable, Equatable {
     /// Atomic identifier (e.g., `HELLO`, `WINNER`)
     case atom(String, SourceLocation)
 
@@ -37,6 +37,9 @@ public enum ZILExpression: Sendable, Equatable {
 
     /// List expression - S-expression with multiple elements (e.g., `<TELL "Hello">`)
     case list([ZILExpression], SourceLocation)
+
+    /// Indirection expression - runtime dereference (e.g., `!ATOM`, `!,GLOBAL`)
+    case indirection(ZILExpression, SourceLocation)
 }
 
 /// ZIL declaration types representing top-level definitions.
@@ -64,6 +67,18 @@ public enum ZILDeclaration: Sendable, Equatable {
 
     /// Version specification
     case version(ZILVersionDeclaration)
+
+    /// Compile-time print directive
+    case princ(ZILPrincDeclaration)
+
+    /// Story name directive
+    case sname(ZILSnameDeclaration)
+
+    /// Compile-time variable assignment
+    case set(ZILSetDeclaration)
+
+    /// Direction definitions directive
+    case directions(ZILDirectionsDeclaration)
 }
 
 /// Parameter with optional default value.
@@ -256,6 +271,70 @@ public struct ZILVersionDeclaration: Sendable, Equatable {
     }
 }
 
+/// Compile-time print directive declaration.
+///
+/// The PRINC directive outputs text during compilation for debugging
+/// and informational purposes.
+public struct ZILPrincDeclaration: Sendable, Equatable {
+    /// The text or expression to print
+    public let text: ZILExpression
+    /// Source location of the declaration
+    public let location: SourceLocation
+
+    public init(text: ZILExpression, location: SourceLocation) {
+        self.text = text
+        self.location = location
+    }
+}
+
+/// Story name directive declaration.
+///
+/// The SNAME directive sets the internal name of the story file.
+public struct ZILSnameDeclaration: Sendable, Equatable {
+    /// The story name
+    public let name: String
+    /// Source location of the declaration
+    public let location: SourceLocation
+
+    public init(name: String, location: SourceLocation) {
+        self.name = name
+        self.location = location
+    }
+}
+
+/// Compile-time variable assignment directive declaration.
+///
+/// The SET directive assigns values to compile-time variables during compilation.
+public struct ZILSetDeclaration: Sendable, Equatable {
+    /// The variable name
+    public let name: String
+    /// The value to assign
+    public let value: ZILExpression
+    /// Source location of the declaration
+    public let location: SourceLocation
+
+    public init(name: String, value: ZILExpression, location: SourceLocation) {
+        self.name = name
+        self.value = value
+        self.location = location
+    }
+}
+
+/// Direction definitions directive declaration.
+///
+/// The DIRECTIONS directive defines the standard movement directions for the game.
+public struct ZILDirectionsDeclaration: Sendable, Equatable {
+    /// List of direction atoms
+    public let directions: [String]
+    /// Source location of the declaration
+    public let location: SourceLocation
+
+    public init(directions: [String], location: SourceLocation) {
+        self.directions = directions
+        self.location = location
+    }
+}
+
 // MARK: - ZILNode Conformance
 
 extension ZILExpression: ZILNode {
@@ -268,7 +347,8 @@ extension ZILExpression: ZILNode {
              .localVariable(_, let location),
              .propertyReference(_, let location),
              .flagReference(_, let location),
-             .list(_, let location):
+             .list(_, let location),
+             .indirection(_, let location):
             return location
         }
     }
@@ -291,6 +371,14 @@ extension ZILDeclaration: ZILNode {
             return insertFile.location
         case .version(let version):
             return version.location
+        case .princ(let princ):
+            return princ.location
+        case .sname(let sname):
+            return sname.location
+        case .set(let set):
+            return set.location
+        case .directions(let directions):
+            return directions.location
         }
     }
 }
@@ -303,3 +391,7 @@ extension ZILPropertyDeclaration: ZILNode {}
 extension ZILConstantDeclaration: ZILNode {}
 extension ZILInsertFileDeclaration: ZILNode {}
 extension ZILVersionDeclaration: ZILNode {}
+extension ZILPrincDeclaration: ZILNode {}
+extension ZILSnameDeclaration: ZILNode {}
+extension ZILSetDeclaration: ZILNode {}
+extension ZILDirectionsDeclaration: ZILNode {}

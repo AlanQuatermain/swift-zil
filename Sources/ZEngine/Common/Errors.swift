@@ -112,6 +112,12 @@ public struct ParseError: ZILError {
 
         /// Unknown top-level declaration
         case unknownDeclaration(String)
+
+        /// Circular file inclusion detected
+        case circularInclude(path: String, stack: [String])
+
+        /// Referenced file could not be found
+        case fileNotFound(String, currentPath: String?)
     }
 
     private init(_ code: ErrorCode, location: SourceLocation) {
@@ -211,6 +217,16 @@ public struct ParseError: ZILError {
         return ParseError(.unknownDeclaration(keyword), location: location)
     }
 
+    /// Creates a circular include error.
+    public static func circularInclude(path: String, stack: [String], location: SourceLocation) -> ParseError {
+        return ParseError(.circularInclude(path: path, stack: stack), location: location)
+    }
+
+    /// Creates a file not found error.
+    public static func fileNotFound(_ filename: String, currentPath: String?) -> ParseError {
+        return ParseError(.fileNotFound(filename, currentPath: currentPath), location: SourceLocation(file: currentPath ?? "<unknown>", line: 0, column: 0))
+    }
+
     public var message: String {
         switch code {
         case .unexpectedToken(let expected, let found):
@@ -249,6 +265,14 @@ public struct ParseError: ZILError {
             return "expected object property"
         case .unknownDeclaration(let keyword):
             return "unknown declaration type '\(keyword)'"
+        case .circularInclude(let path, let stack):
+            return "circular include detected: '\(path)' (inclusion stack: \(stack.joined(separator: " -> ")))"
+        case .fileNotFound(let filename, let currentPath):
+            if let currentPath = currentPath {
+                return "file not found: '\(filename)' (searching from '\(currentPath)')"
+            } else {
+                return "file not found: '\(filename)'"
+            }
         }
     }
 
@@ -286,6 +310,9 @@ public struct AssemblyError: ZILError {
 
         /// A memory address is out of the valid range
         case addressOutOfRange(Int)
+
+        /// A branch target is out of the valid offset range
+        case branchTargetOutOfRange(target: String, offset: Int)
 
         /// An error occurred in memory layout or organization
         case memoryLayoutError(String)
@@ -331,6 +358,11 @@ public struct AssemblyError: ZILError {
         return AssemblyError(.versionMismatch(instruction: instruction, version: version), location: location)
     }
 
+    /// Creates a branch target out of range error.
+    public static func branchTargetOutOfRange(target: String, offset: Int, location: SourceLocation) -> AssemblyError {
+        return AssemblyError(.branchTargetOutOfRange(target: target, offset: offset), location: location)
+    }
+
     public var message: String {
         switch code {
         case .invalidInstruction(let name):
@@ -341,6 +373,8 @@ public struct AssemblyError: ZILError {
             return "undefined label '\(name)'"
         case .addressOutOfRange(let address):
             return "address \(address) out of range"
+        case .branchTargetOutOfRange(let target, let offset):
+            return "branch target '\(target)' out of range (offset \(offset), must be -8192 to +8191)"
         case .memoryLayoutError(let msg):
             return "memory layout error: \(msg)"
         case .versionMismatch(let instruction, let version):

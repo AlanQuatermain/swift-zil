@@ -359,6 +359,7 @@ extension ZAPInstruction {
         operands: [ZValue] = [],
         label: String? = nil,
         branchTarget: String? = nil,
+        branchCondition: BranchCondition? = nil,
         resultTarget: String? = nil
     ) -> ZAPInstruction {
         return ZAPInstruction(
@@ -366,6 +367,7 @@ extension ZAPInstruction {
             operands: operands,
             label: label,
             branchTarget: branchTarget,
+            branchCondition: branchCondition,
             resultTarget: resultTarget
         )
     }

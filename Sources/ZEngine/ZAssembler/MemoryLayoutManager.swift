@@ -85,6 +85,56 @@ public class MemoryLayoutManager {
         currentAddress = 64
     }
 
+    // MARK: - Data Management
+
+    /// Add raw data to the current memory section
+    public func addData(_ data: Data) {
+        // Add to static memory section for data directives
+        staticMemory.append(contentsOf: data)
+    }
+
+    /// Get the current count of strings for ID generation
+    public func getStringCount() -> Int {
+        return stringEntries.count
+    }
+
+    /// Set initial value for a global variable
+    public func setGlobalInitialValue(_ name: String, address: UInt32, value: String, symbolTable: [String: UInt32], location: SourceLocation) throws {
+        // Calculate global table index from address
+        let globalTableAddress = calculateGlobalTableAddress()
+        guard address >= UInt32(globalTableAddress) else {
+            throw AssemblyError.memoryLayoutError("Invalid global address for \(name)", location: location)
+        }
+
+        let globalIndex = (address - UInt32(globalTableAddress)) / 2
+        guard globalIndex < globalTable.count else {
+            throw AssemblyError.memoryLayoutError("Global index out of range for \(name)", location: location)
+        }
+
+        // Parse and set the initial value
+        let initialValue: UInt16
+        if let numericValue = Int16(value) {
+            initialValue = UInt16(bitPattern: numericValue)
+        } else if let symbolAddress = symbolTable[value] {
+            initialValue = UInt16(symbolAddress & 0xFFFF)
+        } else {
+            // Try to parse as constant reference
+            if value.hasPrefix("T?") {
+                // Table reference - extract table number
+                let tableNum = String(value.dropFirst(2))
+                if let tableIndex = Int(tableNum) {
+                    initialValue = UInt16(tableIndex)
+                } else {
+                    initialValue = 0
+                }
+            } else {
+                initialValue = 0 // Default value for unresolved references
+            }
+        }
+
+        globalTable[Int(globalIndex)] = initialValue
+    }
+
     // MARK: - Global Variables
 
     public func allocateGlobal(_ name: String) -> UInt32 {
@@ -215,6 +265,11 @@ public class MemoryLayoutManager {
 
     public func addCode(_ bytecode: Data) {
         codeMemory.append(contentsOf: bytecode)
+        currentAddress += UInt32(bytecode.count)
+    }
+
+    public func getCurrentAddress() -> UInt32 {
+        return currentAddress
     }
 
     // MARK: - Story File Generation

@@ -290,12 +290,36 @@ extension ZMachine {
                 // Null character - space
                 result += " "
             } else if zchar <= 3 {
-                // Special sequences
-                if zchar == 1 {
-                    // Newline
-                    result += "\n"
-                } else if zchar == 2 || zchar == 3 {
-                    // Abbreviations (simplified - just add space)
+                // Abbreviations - Z-chars 1, 2, 3 followed by abbreviation number (0-31)
+                if i + 1 < zchars.count {
+                    let abbrevNumber = zchars[i + 1]
+
+                    // Calculate abbreviation table index
+                    // A0 (zchar 1): entries 0-31
+                    // A1 (zchar 2): entries 32-63
+                    // A2 (zchar 3): entries 64-95
+                    let abbrevIndex = Int((zchar - 1) * 32 + abbrevNumber)
+
+                    if abbrevIndex < abbreviationTable.count && abbreviationTable[abbrevIndex] != 0 {
+                        // Get the address of the abbreviated string
+                        let abbrevStringAddress = abbreviationTable[abbrevIndex]
+
+                        do {
+                            // Read and decode the abbreviated string recursively
+                            let abbrevResult = try readZString(at: abbrevStringAddress)
+                            result += abbrevResult.string
+                        } catch {
+                            // If abbreviation expansion fails, add a space as fallback
+                            result += " "
+                        }
+                    } else {
+                        // Invalid or missing abbreviation - add space as fallback
+                        result += " "
+                    }
+
+                    i += 1  // Skip the abbreviation number
+                } else {
+                    // Incomplete abbreviation sequence - add space
                     result += " "
                 }
             } else if zchar == 4 {

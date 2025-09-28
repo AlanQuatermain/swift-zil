@@ -215,7 +215,7 @@ struct BuildCommand: ParsableCommand {
 
         print("Lexing and parsing...")
         let lexer = ZILLexer(source: zilSource, filename: inputPath)
-        let parser = try ZILParser(lexer: lexer)
+        let parser = try ZILParser(lexer: lexer, filePath: inputPath)
         let declarations = try parser.parseProgram()
 
         print("Generating ZAP assembly...")

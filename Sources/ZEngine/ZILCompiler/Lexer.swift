@@ -145,6 +145,12 @@ public class ZILLexer {
         case "$", "%", "#":
             return try tokenizeNumber()
 
+        case "\\":
+            return try tokenizeEscapedAtom()
+
+        case "!":
+            return tokenizeIndirection()
+
         default:
             if char.isNumber || (char == "-" && peekNext()?.isNumber == true) {
                 return try tokenizeNumber()
@@ -362,6 +368,36 @@ public class ZILLexer {
         return ZILToken(.atom(atomName), value: atomName, location: start)
     }
 
+    /// Tokenizes an escaped atom starting with backslash (e.g., \#RANDOM, \#COMMAND)
+    private func tokenizeEscapedAtom() throws -> ZILToken {
+        let start = currentLocation()
+
+        // Consume the backslash
+        guard currentChar == "\\" else {
+            throw ParseError.invalidSyntax("Expected backslash in escaped atom", location: start)
+        }
+        advance()
+
+        // The next character is escaped (made literal)
+        guard let escapedChar = currentChar else {
+            throw ParseError.unexpectedEndOfFile(location: currentLocation())
+        }
+        advance() // Consume the escaped character
+
+        // Continue reading the rest of the atom normally
+        let remainingAtom = readAtomName()
+        let fullName = String(escapedChar) + remainingAtom
+
+        return ZILToken(.atom(fullName.uppercased()), value: "\\" + fullName, location: start)
+    }
+
+    /// Tokenizes an indirection operator !
+    private func tokenizeIndirection() -> ZILToken {
+        let start = currentLocation()
+        advance() // Consume the !
+        return ZILToken(.indirection, value: "!", location: start)
+    }
+
     // MARK: - Character Reading Utilities
 
     /// Reads characters that form a valid atom name.
@@ -407,13 +443,25 @@ public class ZILLexer {
     // MARK: - Character Classification
 
     /// Checks if a character can start an atom name.
+    /// Per spec-zap.fwf:67-98 and authentic Infocom ZIL patterns:
+    /// - A-Z (uppercase letters)
+    /// - -, ?, #, . (symbol constituents from spec)
+    /// - =, +, *, /, !, &, |, %, \ (operand prefixes and operators from authentic ZIL)
+    /// Note: 0-9 can appear within atoms but not start them
+    /// Note: < and > are delimiters, not part of atom names
     private func isAtomStartChar(_ char: Character) -> Bool {
-        return char.isLetter || "-?+*/=!&|%".contains(char)
+        return char.isUppercase || "-?#.=+*/!&|%\\".contains(char)
     }
 
     /// Checks if a character can appear in an atom name.
+    /// Per spec-zap.fwf:67-98 and authentic Infocom ZIL patterns:
+    /// - A-Z (uppercase letters only)
+    /// - 0-9 (digits)
+    /// - -, ?, #, . (symbol constituents from spec)
+    /// - =, +, *, /, !, &, |, %, \ (operand prefixes and operators from authentic ZIL)
+    /// Note: < and > are delimiters, not part of atom names
     private func isAtomChar(_ char: Character) -> Bool {
-        return char.isLetter || char.isNumber || "-?+*/=!&|%".contains(char)
+        return char.isUppercase || char.isNumber || "-?#.=+*/!&|%\\".contains(char)
     }
 
     /// Checks if a character is a valid octal digit.

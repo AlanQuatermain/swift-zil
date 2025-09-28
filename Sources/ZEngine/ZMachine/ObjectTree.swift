@@ -401,6 +401,9 @@ public struct ObjectEntry {
         let textLength = data[offset]
         offset += 1 + Int(textLength) * 2 // Skip length byte + text words (2 bytes each)
 
+        // Track property order for validation (must be descending)
+        var lastPropertyNumber: UInt8 = version.rawValue >= 4 ? 64 : 32
+
         // Parse property entries until we hit the end marker (property number 0)
         while offset < data.count {
             let header = data[offset]
@@ -415,25 +418,36 @@ public struct ObjectEntry {
             if version.rawValue >= 4 {
                 // Version 4+ property format
                 if (header & 0x80) != 0 {
-                    // Long format: 1PPP PPPP followed by LLLL LLLL (size byte)
-                    propertyNumber = header & 0x7F // Bottom 7 bits for property number
+                    // Long format: 1sPP PPPP followed by LLLL LLLL
+                    // s = size bit (bit 6): 0=1-2 bytes, 1=3-64 bytes
+                    // PP PPPP = property number (bits 0-5)
+                    propertyNumber = header & 0x3F // Bottom 6 bits, not 7
+                    let sizeBit = (header & 0x40) != 0 // Bit 6
+
                     guard offset < data.count else {
                         throw RuntimeError.corruptedStoryFile("Property table truncated at size byte", location: SourceLocation.unknown)
                     }
                     let sizeField = data[offset]
                     offset += 1
 
-                    // Validate size field to prevent excessive memory allocation
-                    guard sizeField <= 64 else {
-                        throw RuntimeError.corruptedStoryFile("Property size \\(sizeField) exceeds maximum of 64 bytes", location: SourceLocation.unknown)
+                    if sizeBit {
+                        // Size bit set: 3-64 bytes (0 means 64)
+                        propertySize = sizeField == 0 ? 64 : Int(sizeField)
+                        guard propertySize >= 3 && propertySize <= 64 else {
+                            throw RuntimeError.corruptedStoryFile("Long format property size \(propertySize) out of valid range 3-64", location: SourceLocation.unknown)
+                        }
+                    } else {
+                        // Size bit clear: 1-2 bytes
+                        propertySize = sizeField == 0 ? 2 : Int(sizeField)
+                        guard propertySize >= 1 && propertySize <= 2 else {
+                            throw RuntimeError.corruptedStoryFile("Long format property size \(propertySize) out of valid range 1-2", location: SourceLocation.unknown)
+                        }
                     }
-
-                    // If size is 0, it means 64 bytes (special case)
-                    propertySize = sizeField == 0 ? 64 : Int(sizeField)
                 } else {
-                    // Short format: 01LL PPPP (length-1 in bits 5-6, property# in bottom 4 bits)
+                    // Short format: 01LL PPPP
+                    // LL = length-1 (bits 4-5), PPPP = property number (bits 0-3)
                     propertyNumber = header & 0x0F // Bottom 4 bits for property number
-                    let lengthField = (header >> 5) & 0x03
+                    let lengthField = (header >> 4) & 0x03 // Fix: shift by 4, not 5
                     propertySize = Int(lengthField) + 1 // Length is stored as size-1
 
                     // Validate size for short format (max 4 bytes)
@@ -453,10 +467,23 @@ public struct ObjectEntry {
                 }
             }
 
-            // Validate property number (1-31 for v3, 1-63 for v4+)
-            let maxProperty = version.rawValue >= 4 ? 63 : 31
-            guard propertyNumber > 0 && propertyNumber <= maxProperty else {
-                throw RuntimeError.corruptedStoryFile("Invalid property number \\(propertyNumber) (valid range: 1-\\(maxProperty))", location: SourceLocation.unknown)
+            // Validate property order (must be descending)
+            guard propertyNumber < lastPropertyNumber else {
+                throw RuntimeError.corruptedStoryFile("Properties not in descending order: found property \(propertyNumber) after \(lastPropertyNumber)", location: SourceLocation.unknown)
+            }
+            lastPropertyNumber = propertyNumber
+
+            // Validate property number based on format for V4+
+            if version.rawValue >= 4 {
+                let maxProperty: UInt8 = (header & 0x80) != 0 ? 63 : 15 // Long format: 6 bits, Short format: 4 bits
+                guard propertyNumber > 0 && propertyNumber <= maxProperty else {
+                    throw RuntimeError.corruptedStoryFile("Invalid V4+ property number \(propertyNumber) for format (valid range: 1-\(maxProperty))", location: SourceLocation.unknown)
+                }
+            } else {
+                // V3 property number validation
+                guard propertyNumber > 0 && propertyNumber <= 31 else {
+                    throw RuntimeError.corruptedStoryFile("Invalid V3 property number \(propertyNumber) (valid range: 1-31)", location: SourceLocation.unknown)
+                }
             }
 
             // Ensure we have enough data for the property content

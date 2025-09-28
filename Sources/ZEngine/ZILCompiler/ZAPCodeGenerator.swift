@@ -407,9 +407,34 @@ public struct ZAPCodeGenerator {
             let value = try evaluateConstantExpression(constant.value)
             memoryLayout.addConstant(constant.name, value: value)
 
-        case .insertFile(_), .version(_):
-            // These don't affect memory layout
+        case .version(_):
+            // Version declarations don't affect memory layout
             break
+
+        case .princ(let princ):
+            // PRINC is compile-time only, but analyze text for any embedded strings
+            try analyzeExpression(princ.text)
+
+        case .sname(_):
+            // SNAME is compile-time metadata only, doesn't affect memory layout
+            break
+
+        case .set(_):
+            // SET is compile-time configuration only, doesn't affect memory layout
+            break
+
+        case .directions(let directions):
+            // DIRECTIONS creates runtime constants and data structures
+            // Add direction constants to symbol table (P?NORTH, P?EAST, etc.)
+            for (index, direction) in directions.directions.enumerated() {
+                let constantName = "P?\(direction.uppercased())"
+                memoryLayout.addConstant(constantName, value: .number(Int16(index + 1)))
+            }
+
+        case .insertFile(_):
+            // INSERT-FILE declarations should have been processed by the parser
+            // and should not appear in the final declaration list
+            throw CodeGenerationError(.invalidInstruction("INSERT-FILE declaration should not reach code generator"))
         }
     }
 
@@ -954,6 +979,11 @@ public struct ZAPCodeGenerator {
 
         case .list(let elements, let location):
             return try generateListExpressionWithBuilder(elements, at: location, using: builder)
+
+        case .indirection(let targetExpression, _):
+            // Generate code for indirection - dereference the target at runtime
+            let targetCode = try generateExpression(targetExpression, using: builder)
+            return "!\(targetCode)"
         }
     }
 

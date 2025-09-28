@@ -383,9 +383,23 @@ extension ZMachine {
             try objectTree.setProperty(UInt16(operands[0]), property: UInt8(operands[1]), value: UInt16(bitPattern: operands[2]))
 
         case 0x04: // READ (v1-3) / SREAD (v4+)
-            // Text input - simplified
-            let input = readInput()
-            outputText("> \(input)\n")
+            guard operands.count >= 2 else {
+                throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+            }
+
+            let textBufferAddr = UInt32(operands[0])
+            let parseBufferAddr = UInt32(operands[1])
+
+            // Optional time and routine operands for v4+
+            var timeLimit: Int16 = 0
+            var timeRoutine: UInt32 = 0
+            if version.rawValue >= 4 && operands.count >= 4 {
+                timeLimit = operands[2]
+                timeRoutine = UInt32(operands[3])
+            }
+
+            try executeReadInstruction(textBuffer: textBufferAddr, parseBuffer: parseBufferAddr,
+                                     timeLimit: timeLimit, timeRoutine: timeRoutine)
 
         case 0x05: // PRINT_CHAR
             guard !operands.isEmpty else {
@@ -438,6 +452,23 @@ extension ZMachine {
                 try storeResult(value)
             }
 
+        case 0x1B: // TOKENISE (V5+)
+            if version.rawValue >= 5 {
+                guard operands.count >= 2 else {
+                    throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+                }
+
+                let textBufferAddr = UInt32(operands[0])
+                let parseBufferAddr = UInt32(operands[1])
+                let dictionaryAddr = operands.count > 2 ? UInt32(operands[2]) : 0
+                let flags = operands.count > 3 ? UInt8(operands[3]) : 0
+
+                try executeTokeniseInstruction(textBuffer: textBufferAddr, parseBuffer: parseBufferAddr,
+                                             dictionary: dictionaryAddr, flags: flags)
+            } else {
+                throw RuntimeError.unsupportedOperation("TOKENISE in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
         default:
             throw RuntimeError.unsupportedOperation("VAR opcode 0x\(String(baseOpcode, radix: 16, uppercase: true))", location: SourceLocation.unknown)
         }
@@ -446,42 +477,50 @@ extension ZMachine {
     // MARK: - Extended Instructions (v5+)
 
     func executeExtendedInstruction(_ opcode: UInt8) throws {
-        // Extended instructions - simplified implementation
-        switch opcode {
-        case 0x00: // SAVE
-            // Save game - always succeed for now
-            try storeResult(1)
+        // Extended instructions require operand type byte (except for some special cases)
+        let operandTypeByte = try readByte(at: programCounter)
+        programCounter += 1
+        let operands = try readVarOperands(operandTypeByte)
 
-        case 0x01: // RESTORE
-            // Restore game - always fail for now
-            try storeResult(0)
+        switch opcode {
+        case 0x00: // SAVE (V4+)
+            if version.rawValue >= 4 {
+                // Extended save with optional table argument
+                // Simplified implementation - always succeed for now
+                try storeResult(1)
+            } else {
+                throw RuntimeError.unsupportedOperation("Extended SAVE in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
+        case 0x01: // RESTORE (V4+)
+            if version.rawValue >= 4 {
+                // Extended restore with optional table argument
+                // Simplified implementation - always fail for now
+                try storeResult(0)
+            } else {
+                throw RuntimeError.unsupportedOperation("Extended RESTORE in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
 
         case 0x02: // LOG_SHIFT
-            let operandTypeByte = try readByte(at: programCounter)
-            programCounter += 1
-            let operands = try readVarOperands(operandTypeByte)
-
             guard operands.count >= 2 else {
                 throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
             }
 
-            let value = operands[0]
+            let value = UInt16(bitPattern: operands[0])
             let shift = operands[1]
 
-            let result: Int16
+            let result: UInt16
             if shift > 0 {
                 result = value << Int(shift)
-            } else {
+            } else if shift < 0 {
                 result = value >> Int(-shift)
+            } else {
+                result = value
             }
 
-            try storeResult(result)
+            try storeResult(Int16(bitPattern: result))
 
         case 0x03: // ART_SHIFT
-            let operandTypeByte = try readByte(at: programCounter)
-            programCounter += 1
-            let operands = try readVarOperands(operandTypeByte)
-
             guard operands.count >= 2 else {
                 throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
             }
@@ -492,12 +531,279 @@ extension ZMachine {
             let result: Int16
             if shift > 0 {
                 result = value << Int(shift)
-            } else {
+            } else if shift < 0 {
                 // Arithmetic right shift preserves sign
                 result = value >> Int(-shift)
+            } else {
+                result = value
             }
 
             try storeResult(result)
+
+        case 0x04: // SET_FONT (V5+)
+            if version.rawValue >= 5 {
+                guard !operands.isEmpty else {
+                    throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+                }
+                // Font setting - simplified implementation
+                // Return previous font (0 = default)
+                try storeResult(0)
+            } else {
+                throw RuntimeError.unsupportedOperation("SET_FONT in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
+        case 0x05: // DRAW_PICTURE (V6)
+            if version.rawValue == 6 {
+                guard operands.count >= 3 else {
+                    throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+                }
+                // Graphics drawing - not implemented
+                // Picture number, y, x coordinates
+                // No-op for now
+            } else {
+                throw RuntimeError.unsupportedOperation("DRAW_PICTURE in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
+        case 0x06: // PICTURE_DATA (V6)
+            if version.rawValue == 6 {
+                guard !operands.isEmpty else {
+                    throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+                }
+                // Picture data query - not implemented
+                // Return 0 (picture not available)
+                try branchOnCondition(false)
+            } else {
+                throw RuntimeError.unsupportedOperation("PICTURE_DATA in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
+        case 0x07: // ERASE_PICTURE (V6)
+            if version.rawValue == 6 {
+                guard !operands.isEmpty else {
+                    throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+                }
+                // Erase picture - not implemented
+                // No-op for now
+            } else {
+                throw RuntimeError.unsupportedOperation("ERASE_PICTURE in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
+        case 0x08: // SET_MARGINS (V6)
+            if version.rawValue == 6 {
+                guard operands.count >= 2 else {
+                    throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+                }
+                // Set margins - not implemented
+                // No-op for now
+            } else {
+                throw RuntimeError.unsupportedOperation("SET_MARGINS in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
+        case 0x09: // SAVE_UNDO (V5+)
+            if version.rawValue >= 5 {
+                // Save undo state - simplified implementation
+                // Return success (1)
+                try storeResult(1)
+            } else {
+                throw RuntimeError.unsupportedOperation("SAVE_UNDO in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
+        case 0x0A: // RESTORE_UNDO (V5+)
+            if version.rawValue >= 5 {
+                // Restore undo state - simplified implementation
+                // Return failure (0)
+                try storeResult(0)
+            } else {
+                throw RuntimeError.unsupportedOperation("RESTORE_UNDO in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
+        case 0x0B: // PRINT_UNICODE (V5+)
+            if version.rawValue >= 5 {
+                guard !operands.isEmpty else {
+                    throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+                }
+                // Print Unicode character
+                let charCode = UInt32(operands[0])
+                if let scalar = UnicodeScalar(charCode) {
+                    outputText(String(Character(scalar)))
+                } else {
+                    // Invalid Unicode - print replacement character
+                    outputText("?")
+                }
+            } else {
+                throw RuntimeError.unsupportedOperation("PRINT_UNICODE in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
+        case 0x0C: // CHECK_UNICODE (V5+)
+            if version.rawValue >= 5 {
+                guard !operands.isEmpty else {
+                    throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+                }
+                // Check if Unicode character can be displayed
+                let charCode = UInt32(operands[0])
+                let canDisplay = UnicodeScalar(charCode) != nil
+                try storeResult(canDisplay ? 1 : 0)
+            } else {
+                throw RuntimeError.unsupportedOperation("CHECK_UNICODE in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
+        case 0x0D: // SET_TRUE_COLOUR (V5+)
+            if version.rawValue >= 5 {
+                guard operands.count >= 2 else {
+                    throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+                }
+                // Set true color - not implemented
+                // No-op for now
+            } else {
+                throw RuntimeError.unsupportedOperation("SET_TRUE_COLOUR in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
+        case 0x10: // MOVE_WINDOW (V6)
+            if version.rawValue == 6 {
+                guard operands.count >= 3 else {
+                    throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+                }
+                // Move window - not implemented
+                // No-op for now
+            } else {
+                throw RuntimeError.unsupportedOperation("MOVE_WINDOW in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
+        case 0x11: // WINDOW_SIZE (V6)
+            if version.rawValue == 6 {
+                guard operands.count >= 3 else {
+                    throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+                }
+                // Set window size - not implemented
+                // No-op for now
+            } else {
+                throw RuntimeError.unsupportedOperation("WINDOW_SIZE in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
+        case 0x12: // WINDOW_STYLE (V6)
+            if version.rawValue == 6 {
+                guard operands.count >= 2 else {
+                    throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+                }
+                // Set window style - not implemented
+                // No-op for now
+            } else {
+                throw RuntimeError.unsupportedOperation("WINDOW_STYLE in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
+        case 0x13: // GET_WIND_PROP (V6)
+            if version.rawValue == 6 {
+                guard operands.count >= 2 else {
+                    throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+                }
+                // Get window property - not implemented
+                // Return 0
+                try storeResult(0)
+            } else {
+                throw RuntimeError.unsupportedOperation("GET_WIND_PROP in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
+        case 0x14: // SCROLL_WINDOW (V6)
+            if version.rawValue == 6 {
+                guard operands.count >= 2 else {
+                    throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+                }
+                // Scroll window - not implemented
+                // No-op for now
+            } else {
+                throw RuntimeError.unsupportedOperation("SCROLL_WINDOW in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
+        case 0x15: // POP_STACK (V6)
+            if version.rawValue >= 6 {
+                guard !operands.isEmpty else {
+                    throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+                }
+                // Pop multiple values from stack
+                let items = Int(operands[0])
+                for _ in 0..<items {
+                    _ = try popStack()
+                }
+            } else {
+                throw RuntimeError.unsupportedOperation("POP_STACK in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
+        case 0x16: // READ_MOUSE (V6)
+            if version.rawValue == 6 {
+                guard !operands.isEmpty else {
+                    throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+                }
+                // Read mouse coordinates - not implemented
+                // No-op for now
+            } else {
+                throw RuntimeError.unsupportedOperation("READ_MOUSE in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
+        case 0x17: // MOUSE_WINDOW (V6)
+            if version.rawValue == 6 {
+                guard !operands.isEmpty else {
+                    throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+                }
+                // Enable mouse in window - not implemented
+                // No-op for now
+            } else {
+                throw RuntimeError.unsupportedOperation("MOUSE_WINDOW in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
+        case 0x18: // PUSH_STACK (V6)
+            if version.rawValue >= 6 {
+                guard operands.count >= 2 else {
+                    throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+                }
+                // Push to user stack - simplified implementation
+                try branchOnCondition(true)
+            } else {
+                throw RuntimeError.unsupportedOperation("PUSH_STACK in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
+        case 0x19: // PUT_WIND_PROP (V6)
+            if version.rawValue == 6 {
+                guard operands.count >= 3 else {
+                    throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+                }
+                // Set window property - not implemented
+                // No-op for now
+            } else {
+                throw RuntimeError.unsupportedOperation("PUT_WIND_PROP in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
+        case 0x1A: // PRINT_FORM (V6)
+            if version.rawValue == 6 {
+                guard !operands.isEmpty else {
+                    throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+                }
+                // Print formatted text - not implemented
+                // No-op for now
+            } else {
+                throw RuntimeError.unsupportedOperation("PRINT_FORM in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
+        case 0x1B: // MAKE_MENU (V6)
+            if version.rawValue == 6 {
+                guard !operands.isEmpty else {
+                    throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+                }
+                // Create menu - not implemented
+                // Return failure
+                try branchOnCondition(false)
+            } else {
+                throw RuntimeError.unsupportedOperation("MAKE_MENU in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
+        case 0x1C: // PICTURE_TABLE (V6)
+            if version.rawValue == 6 {
+                guard !operands.isEmpty else {
+                    throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+                }
+                // Set picture table - not implemented
+                // No-op for now
+            } else {
+                throw RuntimeError.unsupportedOperation("PICTURE_TABLE in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
 
         default:
             throw RuntimeError.unsupportedOperation("Extended opcode 0x\(String(opcode, radix: 16, uppercase: true))", location: SourceLocation.unknown)

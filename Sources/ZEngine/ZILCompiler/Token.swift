@@ -74,6 +74,11 @@ public enum TokenType: Sendable, Equatable {
     /// Closing parenthesis `)` - ends lists and property definitions
     case rightParen
 
+    // MARK: - Operators
+
+    /// Indirection operator `!` - dereferences atoms and variables at runtime
+    case indirection
+
     // MARK: - Literals
 
     /// A numeric literal value
@@ -203,6 +208,7 @@ extension TokenType {
         case .rightAngle: return "closing angle bracket '>'"
         case .leftParen: return "opening parenthesis '('"
         case .rightParen: return "closing parenthesis ')'"
+        case .indirection: return "indirection operator '!'"
         case .number: return "number literal"
         case .string: return "string literal"
         case .atom: return "atom"

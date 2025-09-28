@@ -8,6 +8,9 @@ public class ZAPParser {
     private var currentLine = 0
     private var inObjectBlock = false  // Track object context for property parsing
 
+    /// Initialize a new ZAP parser
+    public init() {}
+
     /// Parse ZAP source code into assembly statements
     ///
     /// - Parameter source: ZAP assembly source code as string
@@ -137,6 +140,7 @@ public class ZAPParser {
 
         // Extract branch target and result target if present
         var branchTarget: String? = nil
+        var branchCondition: BranchCondition? = nil
         var resultTarget: String? = nil
         var finalOperands = parsedOperands
 
@@ -144,6 +148,8 @@ public class ZAPParser {
         if let lastOperand = parsedOperands.last,
            case .atom(let atomValue) = lastOperand,
            (atomValue.hasPrefix("/") || atomValue.hasPrefix("\\")) {
+            // Preserve branch condition information
+            branchCondition = atomValue.hasPrefix("/") ? .branchOnTrue : .branchOnFalse
             branchTarget = String(atomValue.dropFirst())
             finalOperands = Array(parsedOperands.dropLast())
         }
@@ -161,6 +167,7 @@ public class ZAPParser {
             operands: finalOperands,
             label: nil, // Labels are handled separately
             branchTarget: branchTarget,
+            branchCondition: branchCondition,
             resultTarget: resultTarget
         )
 
@@ -181,7 +188,7 @@ public class ZAPParser {
             return .number(number)
         }
 
-        // Handle special atoms with prefixes
+        // Handle special atoms with operand prefixes (from spec-zap.fwf)
         if trimmed.hasPrefix("'") {
             // Global variable reference
             return .atom(trimmed)
@@ -194,6 +201,16 @@ public class ZAPParser {
 
         if trimmed.hasPrefix("F?") {
             // Flag reference
+            return .atom(trimmed)
+        }
+
+        if trimmed.hasPrefix("=") {
+            // Value operand prefix (for assignments/defaults)
+            return .atom(trimmed)
+        }
+
+        if trimmed.hasPrefix("+") {
+            // Addend operand prefix (addition of constants/packed addresses)
             return .atom(trimmed)
         }
 

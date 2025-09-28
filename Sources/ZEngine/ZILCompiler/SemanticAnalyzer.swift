@@ -217,6 +217,32 @@ public final class SemanticAnalyzer: Sendable {
         case .insertFile(_), .version(_):
             // These don't define symbols, skip
             break
+
+        case .princ(_):
+            // PRINC is compile-time only, doesn't define symbols
+            break
+
+        case .sname(_):
+            // SNAME is compile-time metadata, doesn't define symbols
+            break
+
+        case .set(_):
+            // SET is compile-time configuration, doesn't define symbols
+            break
+
+        case .directions(let directions):
+            // DIRECTIONS creates direction constants
+            for (index, direction) in directions.directions.enumerated() {
+                let constantName = "P?\(direction.uppercased())"
+                let success = state.symbolTable.defineSymbol(
+                    name: constantName,
+                    type: .constant(value: .number(Int16(index + 1), directions.location)),
+                    at: directions.location
+                )
+                if !success {
+                    // Symbol redefinition will be handled by symbol table diagnostics
+                }
+            }
         }
     }
 
@@ -235,6 +261,22 @@ public final class SemanticAnalyzer: Sendable {
             validateConstant(constant, state: &state)
         case .insertFile(_), .version(_):
             // These don't need validation, skip
+            break
+
+        case .princ(_):
+            // PRINC is compile-time only, no validation needed
+            break
+
+        case .sname(_):
+            // SNAME is compile-time metadata, no validation needed
+            break
+
+        case .set(_):
+            // SET is compile-time configuration, no validation needed
+            break
+
+        case .directions(_):
+            // DIRECTIONS validation handled during symbol definition
             break
         }
     }
@@ -352,6 +394,10 @@ public final class SemanticAnalyzer: Sendable {
         case .number(_, _), .string(_, _):
             // Literals are always valid
             break
+
+        case .indirection(let targetExpression, _):
+            // Validate the target expression being dereferenced
+            validateExpression(targetExpression, state: &state)
         }
     }
 

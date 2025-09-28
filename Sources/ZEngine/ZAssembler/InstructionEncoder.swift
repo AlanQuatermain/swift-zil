@@ -16,12 +16,11 @@ public class InstructionEncoder {
     /// - Parameters:
     ///   - instruction: The ZAP instruction
     ///   - address: Current address for size calculations
+    ///   - symbolTable: Symbol table for branch offset calculation
     /// - Returns: Size in bytes
     /// - Throws: AssemblyError for encoding failures
-    public func calculateInstructionSize(_ instruction: ZAPInstruction, at address: UInt32) throws -> UInt32 {
-        // This is a simplified size calculation - real implementation would be more complex
+    public func calculateInstructionSize(_ instruction: ZAPInstruction, at address: UInt32, symbolTable: [String: UInt32] = [:]) throws -> UInt32 {
         let opcode = try mapOpcodeToZMachine(instruction.opcode)
-        let _ = instruction.operands.count
 
         // Basic size calculation: opcode byte + operands
         var size: UInt32 = 1 // Opcode byte
@@ -36,9 +35,31 @@ public class InstructionEncoder {
             size += try calculateOperandSize(operand)
         }
 
+        // Add result storage byte if instruction produces a result
+        if instruction.resultTarget != nil {
+            size += 1
+        }
+
         // Add branch offset if instruction has branch target
-        if instruction.branchTarget != nil {
-            size += 2 // Branch offset (1-2 bytes, simplified to 2)
+        if let branchTarget = instruction.branchTarget {
+            // Special targets are always single-byte
+            if branchTarget.uppercased() == "RTRUE" || branchTarget.uppercased() == "RFALSE" {
+                size += 1
+            } else if let targetAddress = symbolTable[branchTarget] {
+                // Calculate approximate branch offset to determine encoding size
+                let branchFromAddress = address + size + 2  // Assume 2-byte branch initially
+                let rawOffset = Int32(targetAddress) - Int32(branchFromAddress)
+
+                // Check if we can use single-byte encoding (6-bit range: -32 to +31)
+                if rawOffset >= -32 && rawOffset <= 31 {
+                    size += 1
+                } else {
+                    size += 2
+                }
+            } else {
+                // Forward reference - assume 2-byte encoding (conservative)
+                size += 2
+            }
         }
 
         return size
@@ -50,9 +71,10 @@ public class InstructionEncoder {
     ///   - instruction: The ZAP instruction to encode
     ///   - symbolTable: Symbol table for address resolution
     ///   - location: Source location for error reporting
+    ///   - currentAddress: Current address for branch offset calculation
     /// - Returns: Encoded bytecode
     /// - Throws: AssemblyError for encoding failures
-    public func encodeInstruction(_ instruction: ZAPInstruction, symbolTable: [String: UInt32], location: SourceLocation) throws -> Data {
+    public func encodeInstruction(_ instruction: ZAPInstruction, symbolTable: [String: UInt32], location: SourceLocation, currentAddress: UInt32) throws -> Data {
         output.removeAll()
 
         let opcode = try mapOpcodeToZMachine(instruction.opcode)
@@ -79,7 +101,11 @@ public class InstructionEncoder {
 
         // Encode branch target if present
         if let branchTarget = instruction.branchTarget {
-            try encodeBranchTarget(branchTarget, symbolTable: symbolTable)
+            try encodeBranchTarget(branchTarget,
+                                 condition: instruction.branchCondition ?? .branchOnTrue,
+                                 symbolTable: symbolTable,
+                                 currentAddress: currentAddress,
+                                 instructionLength: UInt32(output.count))
         }
 
         return Data(output)
@@ -383,41 +409,76 @@ public class InstructionEncoder {
         output.append(variableNumber)
     }
 
-    private func encodeBranchTarget(_ target: String, symbolTable: [String: UInt32]) throws {
-        // Branch encoding format:
-        // If bit 7 is 0: 14-bit signed offset in two bytes
-        // If bit 7 is 1: 6-bit signed offset in one byte
-        // Bit 6 indicates branch condition (1 = branch on true, 0 = branch on false)
+    private func encodeBranchTarget(_ target: String, condition: BranchCondition, symbolTable: [String: UInt32], currentAddress: UInt32, instructionLength: UInt32) throws {
+        // Z-Machine branch encoding format:
+        //
+        // For single-byte format (6-bit offset):
+        // Bit 7: 1 (indicates single byte format)
+        // Bit 6: Branch condition (1 = branch on true, 0 = branch on false)
+        // Bits 5-0: 6-bit signed offset (-32 to +31)
+        //
+        // For two-byte format (14-bit offset):
+        // First byte:  Bit 7: 0 (indicates two byte format)
+        //              Bit 6: Branch condition (1 = branch on true, 0 = branch on false)
+        //              Bits 5-0: Upper 6 bits of 14-bit signed offset
+        // Second byte: Lower 8 bits of 14-bit signed offset
+        //
+        // Special offsets: 0 = RFALSE, 1 = RTRUE
 
-        if let targetAddress = symbolTable[target] {
-            // Calculate relative offset from current position
-            let currentAddress = output.count + 2  // Assuming 2-byte branch
-            let offset = Int16(targetAddress) - Int16(currentAddress)
+        // Handle special targets first
+        if target.uppercased() == "RTRUE" {
+            // Branch and return true (offset 1)
+            let branchByte: UInt8 = 0x80 | (condition == .branchOnTrue ? 0x40 : 0x00) | 0x01
+            output.append(branchByte)
+            return
+        }
 
-            if offset >= -64 && offset <= 63 {
-                // 6-bit offset (single byte)
-                var branchByte: UInt8 = 0x80  // Set bit 7 (single byte format)
-                branchByte |= 0x40  // Set bit 6 (branch on true - default)
-                branchByte |= UInt8(offset & 0x3F)  // 6-bit offset
-                output.append(branchByte)
-            } else {
-                // 14-bit offset (two bytes)
-                var branchWord: UInt16 = 0x4000  // Set bit 14 (branch on true - default)
-                branchWord |= UInt16(offset & 0x3FFF)  // 14-bit offset
-                output.append(UInt8((branchWord >> 8) & 0xFF))
-                output.append(UInt8(branchWord & 0xFF))
-            }
+        if target.uppercased() == "RFALSE" {
+            // Branch and return false (offset 0)
+            let branchByte: UInt8 = 0x80 | (condition == .branchOnTrue ? 0x40 : 0x00) | 0x00
+            output.append(branchByte)
+            return
+        }
+
+        // Look up target address
+        guard let targetAddress = symbolTable[target] else {
+            // Forward reference - use placeholder encoding for now
+            // This should be resolved in a second pass
+            output.append(0x40)  // Default: branch on true, offset 0
+            output.append(0x00)
+            return
+        }
+
+        // Calculate branch offset relative to the address AFTER this instruction
+        let branchFromAddress = currentAddress + instructionLength + 2  // Assume 2-byte branch initially
+        let rawOffset = Int32(targetAddress) - Int32(branchFromAddress)
+
+        // Validate offset range
+        if rawOffset < -8192 || rawOffset > 8191 {
+            throw AssemblyError.branchTargetOutOfRange(target: target, offset: Int(rawOffset),
+                                                     location: SourceLocation(file: "assembly", line: 0, column: 0))
+        }
+
+        // Determine if we can use single-byte encoding
+        if rawOffset >= -32 && rawOffset <= 31 {
+            // Single-byte format
+            let branchByte: UInt8 = 0x80 |  // Single byte indicator
+                                   (condition == .branchOnTrue ? 0x40 : 0x00) |  // Branch condition
+                                   UInt8(rawOffset & 0x3F)  // 6-bit offset
+            output.append(branchByte)
         } else {
-            // Special branch targets
-            if target.uppercased() == "RTRUE" {
-                output.append(0xC1)  // Branch on true, offset 1 (return true)
-            } else if target.uppercased() == "RFALSE" {
-                output.append(0xC0)  // Branch on true, offset 0 (return false)
-            } else {
-                // Forward reference - placeholder
-                output.append(0x40)  // Default: branch on true, offset 0
-                output.append(0x00)
-            }
+            // Two-byte format
+            // Recalculate offset for two-byte branch (we assumed 2 bytes, so this is correct)
+            let offset14 = UInt16(rawOffset & 0x3FFF)  // 14-bit offset
+
+            let firstByte: UInt8 = 0x00 |  // Two byte indicator (bit 7 = 0)
+                                  (condition == .branchOnTrue ? 0x40 : 0x00) |  // Branch condition
+                                  UInt8((offset14 >> 8) & 0x3F)  // Upper 6 bits
+
+            let secondByte: UInt8 = UInt8(offset14 & 0xFF)  // Lower 8 bits
+
+            output.append(firstByte)
+            output.append(secondByte)
         }
     }
 

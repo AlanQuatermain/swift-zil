@@ -122,7 +122,8 @@ public class ZAssembler {
                 try processDirectiveSecondPass(directive, location: location)
 
             case .instruction(let instruction, let location):
-                let bytecode = try encoder.encodeInstruction(instruction, symbolTable: state.symbolTable, location: location)
+                let currentAddress = memoryLayout.getCurrentAddress()
+                let bytecode = try encoder.encodeInstruction(instruction, symbolTable: state.symbolTable, location: location, currentAddress: currentAddress)
                 memoryLayout.addCode(bytecode)
 
             case .objectProperty(let property, let location):
@@ -225,6 +226,47 @@ public class ZAssembler {
             state.currentObject = nil  // End object context
             return address
 
+        case "BYTE":
+            guard directive.arguments.count >= 1 else {
+                throw AssemblyError.invalidOperand(instruction: "BYTE", operand: "requires at least 1 argument", location: location)
+            }
+            // Each byte takes 1 byte of memory
+            return address + UInt32(directive.arguments.count)
+
+        case "WORD":
+            guard directive.arguments.count >= 1 else {
+                throw AssemblyError.invalidOperand(instruction: "WORD", operand: "requires at least 1 argument", location: location)
+            }
+            // Each word takes 2 bytes of memory
+            return address + UInt32(directive.arguments.count * 2)
+
+        case "STR":
+            guard directive.arguments.count >= 1,
+                  let content = directive.arguments[0].asString else {
+                throw AssemblyError.invalidOperand(instruction: "STR", operand: "requires string content", location: location)
+            }
+
+            // Calculate encoded string length for memory allocation
+            let encodedLength = calculateEncodedStringLength(content)
+            return address + encodedLength
+
+        case "GVAR":
+            guard directive.arguments.count >= 1,
+                  let nameAndValue = directive.arguments[0].asAtom else {
+                throw AssemblyError.invalidOperand(instruction: "GVAR", operand: "requires variable definition", location: location)
+            }
+
+            // Parse GVAR format: VARIABLE=VALUE or just VARIABLE
+            let components = nameAndValue.split(separator: "=", maxSplits: 1)
+            let varName = String(components[0])
+            let varValue = components.count > 1 ? ZValue.atom(String(components[1])) : ZValue.number(0)
+
+            // Allocate global and store the initial value
+            let globalAddress = memoryLayout.allocateGlobal(varName)
+            state.addSymbol(varName, address: globalAddress, location: location)
+            state.addConstant("\(varName)_INIT", value: varValue)
+            return address
+
         case "END":
             // End of assembly marker
             return address
@@ -232,6 +274,15 @@ public class ZAssembler {
         default:
             throw AssemblyError.invalidInstruction(directive.name, location: location)
         }
+    }
+
+    /// Calculate encoded string length for memory allocation
+    private func calculateEncodedStringLength(_ content: String) -> UInt32 {
+        // Estimate encoded Z-string length
+        // Each 16-bit word holds 3 Z-characters (5 bits each + 1 end bit)
+        let chars = content.count
+        let words = (chars + 2) / 3  // Round up to nearest word boundary
+        return UInt32(words * 2)  // Each word is 2 bytes
     }
 
     private func processDirectiveSecondPass(_ directive: ZAPDirective, location: SourceLocation) throws {
@@ -245,6 +296,95 @@ public class ZAssembler {
 
         case "ENDOBJECT":
             try memoryLayout.endObject(location: location)
+
+        case "BYTE":
+            // Process byte data directive
+            var data = Data()
+            for arg in directive.arguments {
+                switch arg {
+                case .number(let value):
+                    data.append(UInt8(value & 0xFF))
+                case .atom(let name):
+                    // Resolve symbol to byte value
+                    if let address = state.symbolTable[name] {
+                        data.append(UInt8(address & 0xFF))
+                    } else if let constant = state.constants[name] {
+                        if let numValue = constant.asNumber {
+                            data.append(UInt8(numValue & 0xFF))
+                        } else {
+                            throw AssemblyError.undefinedLabel(name, location: location)
+                        }
+                    } else {
+                        throw AssemblyError.undefinedLabel(name, location: location)
+                    }
+                default:
+                    throw AssemblyError.invalidOperand(instruction: "BYTE", operand: "unsupported value type", location: location)
+                }
+            }
+            memoryLayout.addData(data)
+
+        case "WORD":
+            // Process word data directive
+            var data = Data()
+            for arg in directive.arguments {
+                switch arg {
+                case .number(let value):
+                    let word = UInt16(value) & 0xFFFF
+                    data.append(UInt8((word >> 8) & 0xFF))  // High byte first
+                    data.append(UInt8(word & 0xFF))         // Low byte second
+                case .atom(let name):
+                    // Resolve symbol to word value
+                    if let address = state.symbolTable[name] {
+                        let word = UInt16(address) & 0xFFFF
+                        data.append(UInt8((word >> 8) & 0xFF))
+                        data.append(UInt8(word & 0xFF))
+                    } else if let constant = state.constants[name] {
+                        if let numValue = constant.asNumber {
+                            let word = UInt16(numValue) & 0xFFFF
+                            data.append(UInt8((word >> 8) & 0xFF))
+                            data.append(UInt8(word & 0xFF))
+                        } else {
+                            throw AssemblyError.undefinedLabel(name, location: location)
+                        }
+                    } else {
+                        throw AssemblyError.undefinedLabel(name, location: location)
+                    }
+                default:
+                    throw AssemblyError.invalidOperand(instruction: "WORD", operand: "unsupported value type", location: location)
+                }
+            }
+            memoryLayout.addData(data)
+
+        case "STR":
+            // Process string directive (alternative to STRING)
+            guard let content = directive.arguments.first?.asString else {
+                throw AssemblyError.invalidOperand(instruction: "STR", operand: "requires string content", location: location)
+            }
+
+            // Generate a unique string ID if not provided
+            let stringId = directive.arguments.count > 1
+                ? (directive.arguments[1].asAtom ?? "STR_\(memoryLayout.getStringCount())")
+                : "STR_\(memoryLayout.getStringCount())"
+
+            _ = memoryLayout.addString(stringId, content: content)
+
+        case "GVAR":
+            // Process enhanced global variable directive
+            // This was mostly handled in first pass, but we may need to set initial values
+            guard let nameAndValue = directive.arguments.first?.asAtom else {
+                throw AssemblyError.invalidOperand(instruction: "GVAR", operand: "requires variable definition", location: location)
+            }
+
+            let components = nameAndValue.split(separator: "=", maxSplits: 1)
+            let varName = String(components[0])
+
+            if components.count > 1 {
+                let valueStr = String(components[1])
+                // Set initial value in global table
+                if let address = state.symbolTable[varName] {
+                    try memoryLayout.setGlobalInitialValue(varName, address: address, value: valueStr, symbolTable: state.symbolTable, location: location)
+                }
+            }
 
         default:
             // Most directives were handled in first pass
@@ -323,18 +463,26 @@ public struct ZAPDirective {
 }
 
 /// Represents a ZAP assembly instruction
+/// Branch condition for Z-Machine instructions
+public enum BranchCondition {
+    case branchOnTrue    // `/label` - branch when condition is true
+    case branchOnFalse   // `\label` - branch when condition is false
+}
+
 public struct ZAPInstruction {
     public let opcode: String
     public let operands: [ZValue]
     public let label: String?
     public let branchTarget: String?
+    public let branchCondition: BranchCondition?
     public let resultTarget: String?
 
-    public init(opcode: String, operands: [ZValue] = [], label: String? = nil, branchTarget: String? = nil, resultTarget: String? = nil) {
+    public init(opcode: String, operands: [ZValue] = [], label: String? = nil, branchTarget: String? = nil, branchCondition: BranchCondition? = nil, resultTarget: String? = nil) {
         self.opcode = opcode
         self.operands = operands
         self.label = label
         self.branchTarget = branchTarget
+        self.branchCondition = branchCondition
         self.resultTarget = resultTarget
     }
 }
