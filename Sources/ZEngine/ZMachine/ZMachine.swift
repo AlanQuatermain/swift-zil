@@ -79,6 +79,10 @@ public class ZMachine {
     /// Abbreviation table for text decompression (96 entries: 32 each for A0, A1, A2)
     internal var abbreviationTable: [UInt32] = []
 
+    /// Unicode translation table for ZSCII to Unicode mapping (v5+)
+    /// Maps ZSCII characters 155-223 to Unicode code points
+    internal var unicodeTranslationTable: [UInt32: UInt32] = [:]
+
     /// Text output buffer
     private var outputBuffer: String = ""
 
@@ -89,6 +93,14 @@ public class ZMachine {
     internal var isRunning: Bool = false
     internal var hasQuit: Bool = false
 
+    // MARK: - Window Management
+
+    /// Window manager for multiple window support (v4+)
+    internal var windowManager: WindowManager?
+
+    /// Window delegate for handling window operations
+    public weak var windowDelegate: WindowDelegate?
+
     // MARK: - I/O Delegates
 
     /// Text output delegate
@@ -96,6 +108,22 @@ public class ZMachine {
 
     /// Text input delegate
     public weak var inputDelegate: TextInputDelegate?
+
+    // MARK: - Sound System
+
+    /// Sound manager for audio effects (v4+)
+    internal var soundManager: SoundManager?
+
+    /// Sound effects delegate
+    public weak var soundDelegate: SoundDelegate?
+
+    // MARK: - Save/Restore System
+
+    /// Save game delegate for handling save/restore operations
+    public weak var saveGameDelegate: SaveGameDelegate?
+
+    /// UNDO save state for RAM-based SAVE_UNDO/RESTORE_UNDO (v5+)
+    private var undoState: QuetzalSaveState?
 
     // MARK: - Initialization
 
@@ -110,11 +138,14 @@ public class ZMachine {
         locals.removeAll()
         globals = Array(repeating: 0, count: 240)
         abbreviationTable.removeAll()
+        unicodeTranslationTable.removeAll()
         programCounter = 0
         isRunning = false
         hasQuit = false
         outputBuffer = ""
         inputBuffer = ""
+
+        // WindowManager is initialized after header parsing, not here
     }
 
     // MARK: - Story File Loading
@@ -133,6 +164,19 @@ public class ZMachine {
         try parseHeader()
         try setupMemoryRegions()
         try loadGameData()
+
+        // Initialize WindowManager after header parsing when version is known
+        if version.rawValue >= 4 {
+            windowManager = WindowManager(version: version)
+            windowManager?.delegate = windowDelegate
+        }
+
+        // Initialize SoundManager for audio effects (v4+)
+        if version.rawValue >= 4 {
+            soundManager = SoundManager(version: version)
+            soundManager?.setZMachine(self)
+            soundManager?.delegate = soundDelegate
+        }
 
         // Reset VM state but preserve important header values
         setupInitialState()
@@ -165,6 +209,10 @@ public class ZMachine {
 
     private func setupMemoryRegions() throws {
         let dataSize = storyData.count
+
+        // Use header values for memory boundaries
+        staticMemoryBase = header.staticMemoryBase
+        highMemoryBase = header.highMemoryBase
 
         // Validate memory region boundaries according to ZIP specification
         guard staticMemoryBase >= 64 else {
@@ -265,15 +313,29 @@ public class ZMachine {
         // Load global variables from dynamic memory
         try loadGlobals()
 
-        // Load object tree from static memory
-        // Convert absolute object table address to offset within static memory
-        let objectTableOffset = header.objectTableAddress - header.staticMemoryBase
+        // Load object tree from appropriate memory region
+        let objectTableAddress = header.objectTableAddress
+        let objectData: Data
+        let objectTableOffset: UInt32
 
-        guard objectTableOffset < UInt32(staticMemory.count) else {
-            throw RuntimeError.corruptedStoryFile("Object table offset \(objectTableOffset) exceeds static memory size \(staticMemory.count)", location: SourceLocation.unknown)
+        if objectTableAddress < header.staticMemoryBase {
+            // Object table is in dynamic memory
+            guard objectTableAddress < UInt32(dynamicMemory.count) else {
+                throw RuntimeError.corruptedStoryFile("Object table address \(objectTableAddress) exceeds dynamic memory size \(dynamicMemory.count)", location: SourceLocation.unknown)
+            }
+            objectData = dynamicMemory
+            objectTableOffset = objectTableAddress
+        } else {
+            // Object table is in static memory
+            let staticOffset = objectTableAddress - header.staticMemoryBase
+            guard staticOffset < UInt32(staticMemory.count) else {
+                throw RuntimeError.corruptedStoryFile("Object table offset \(staticOffset) exceeds static memory size \(staticMemory.count)", location: SourceLocation.unknown)
+            }
+            objectData = staticMemory
+            objectTableOffset = staticOffset
         }
 
-        try objectTree.load(from: staticMemory, version: version, objectTableAddress: UInt32(objectTableOffset), staticMemoryBase: header.staticMemoryBase, dictionaryAddress: header.dictionaryAddress)
+        try objectTree.load(from: objectData, version: version, objectTableAddress: objectTableOffset, staticMemoryBase: header.staticMemoryBase, dictionaryAddress: header.dictionaryAddress)
 
         // Load dictionary from static memory
         // Convert absolute dictionary address to offset within static memory
@@ -287,6 +349,11 @@ public class ZMachine {
 
         // Load abbreviation table from static memory
         try loadAbbreviationTable()
+
+        // Load Unicode translation table for v5+
+        if version.rawValue >= 5 {
+            try loadUnicodeTranslationTable()
+        }
     }
 
     private func loadAbbreviationTable() throws {
@@ -349,9 +416,103 @@ public class ZMachine {
         }
     }
 
+    /// Load Unicode translation table for ZSCII to Unicode mapping (v5+)
+    private func loadUnicodeTranslationTable() throws {
+        // Clear existing Unicode translation table
+        unicodeTranslationTable.removeAll()
+
+        // Skip loading if no Unicode table is defined
+        guard header.unicodeTableAddress > 0 else {
+            // Initialize default ZSCII to Unicode mappings (155-223 map to themselves)
+            for zsciiChar in 155...223 {
+                unicodeTranslationTable[UInt32(zsciiChar)] = UInt32(zsciiChar)
+            }
+            return
+        }
+
+        // Determine which memory region contains the Unicode table
+        let unicodeAddress = header.unicodeTableAddress
+        let unicodeData: Data
+        let unicodeOffset: Int
+
+        if unicodeAddress < header.staticMemoryBase {
+            // Unicode table is in dynamic memory
+            guard unicodeAddress < UInt32(dynamicMemory.count) else {
+                throw RuntimeError.corruptedStoryFile("Unicode table address \(unicodeAddress) exceeds dynamic memory size", location: SourceLocation.unknown)
+            }
+            unicodeData = dynamicMemory
+            unicodeOffset = Int(unicodeAddress)
+        } else if unicodeAddress < header.highMemoryBase {
+            // Unicode table is in static memory
+            let staticOffset = unicodeAddress - header.staticMemoryBase
+            guard staticOffset < UInt32(staticMemory.count) else {
+                throw RuntimeError.corruptedStoryFile("Unicode table offset \(staticOffset) exceeds static memory size", location: SourceLocation.unknown)
+            }
+            unicodeData = staticMemory
+            unicodeOffset = Int(staticOffset)
+        } else {
+            // Unicode table is in high memory
+            let highOffset = unicodeAddress - header.highMemoryBase
+            guard highOffset < UInt32(highMemory.count) else {
+                throw RuntimeError.corruptedStoryFile("Unicode table offset \(highOffset) exceeds high memory size", location: SourceLocation.unknown)
+            }
+            unicodeData = highMemory
+            unicodeOffset = Int(highOffset)
+        }
+
+        // Read Unicode table format:
+        // Byte 0: Number of Unicode characters (N, max 69 for ZSCII range 155-223)
+        guard unicodeOffset < unicodeData.count else {
+            throw RuntimeError.corruptedStoryFile("Unicode table extends beyond memory region", location: SourceLocation.unknown)
+        }
+
+        let unicodeCount = unicodeData[unicodeOffset]
+
+        // Validate Unicode count (ZSCII 155-223 = 69 possible characters)
+        guard unicodeCount <= 69 else {
+            throw RuntimeError.corruptedStoryFile("Unicode table count \(unicodeCount) exceeds maximum of 69", location: SourceLocation.unknown)
+        }
+
+        // Ensure we have enough data for the table
+        let requiredSize = 1 + Int(unicodeCount) * 2  // Header byte + N words
+        guard unicodeOffset + requiredSize <= unicodeData.count else {
+            throw RuntimeError.corruptedStoryFile("Unicode table extends beyond memory region", location: SourceLocation.unknown)
+        }
+
+        // Load Unicode mappings for ZSCII characters 155 through (154 + unicodeCount)
+        for i in 0..<Int(unicodeCount) {
+            let entryOffset = unicodeOffset + 1 + (i * 2)
+            let unicodeValue = (UInt32(unicodeData[entryOffset]) << 8) | UInt32(unicodeData[entryOffset + 1])
+            let zsciiChar = UInt32(155 + i)
+
+            // Store the mapping
+            unicodeTranslationTable[zsciiChar] = unicodeValue
+        }
+
+        // For any ZSCII characters 155-223 not in the table, use default (self-mapping)
+        for zsciiChar in Int(155 + unicodeCount)...223 {
+            if unicodeTranslationTable[UInt32(zsciiChar)] == nil {
+                unicodeTranslationTable[UInt32(zsciiChar)] = UInt32(zsciiChar)
+            }
+        }
+    }
+
     private func loadGlobals() throws {
         let globalBase = header.globalTableAddress
-        let globalCount = min(globals.count, Int((staticMemoryBase - globalBase) / 2))
+
+        // Validate that global table is within dynamic memory
+        guard globalBase < staticMemoryBase else {
+            throw RuntimeError.corruptedStoryFile("Global table address (\(globalBase)) must be in dynamic memory (< \(staticMemoryBase))", location: SourceLocation.unknown)
+        }
+
+        // Calculate available space for globals, ensuring no division by zero
+        let availableSpace = staticMemoryBase - globalBase
+        guard availableSpace > 0 else {
+            throw RuntimeError.corruptedStoryFile("No space available for global variables", location: SourceLocation.unknown)
+        }
+
+        let maxGlobalsFromSpace = Int(availableSpace / 2)  // Each global is 2 bytes
+        let globalCount = min(globals.count, maxGlobalsFromSpace)
 
         for i in 0..<Int(globalCount) {
             let address = globalBase + UInt32(i * 2)
@@ -391,18 +552,39 @@ public class ZMachine {
     }
 
     private func decodeAndExecuteInstruction(_ opcode: UInt8) throws {
-        // Determine instruction form based on opcode pattern
-        if opcode >= 0xE0 {
-            // VAR form instructions
-            try executeVarInstruction(opcode)
-        } else if opcode >= 0xB0 {
-            // 0OP form instructions
-            try execute0OPInstruction(opcode)
-        } else if opcode >= 0x80 {
-            // 1OP form instructions
-            try execute1OPInstruction(opcode)
-        } else {
-            // 2OP form instructions
+        // Check for extended form first (V4+)
+        if opcode == 0xBE && version.rawValue >= 4 {
+            let extOpcode = try readByte(at: programCounter)
+            programCounter += 1
+            try executeExtendedInstruction(extOpcode)
+            return
+        }
+
+        // Determine instruction form based on opcode bit patterns
+        let topTwoBits = opcode & 0xC0  // Extract bits 7-6
+
+        switch topTwoBits {
+        case 0x80:  // 10xxxxxx - Short form
+            let operandTypeBits = opcode & 0x30  // Extract bits 5-4
+            if operandTypeBits == 0x30 {
+                // Operand type = 11 (omitted) -> 0OP
+                try execute0OPInstruction(opcode)
+            } else {
+                // Operand type != 11 -> 1OP
+                try execute1OPInstruction(opcode)
+            }
+
+        case 0xC0:  // 11xxxxxx - Variable form
+            let varTypeBit = opcode & 0x20  // Extract bit 5
+            if varTypeBit == 0 {
+                // Bit 5 = 0 -> True VAR opcodes (like PRINT_CHAR)
+                try executeVarInstruction(opcode)
+            } else {
+                // Bit 5 = 1 -> VAR form encoding of 2OP instructions
+                try execute2OPVarInstruction(opcode)
+            }
+
+        default:  // 00xxxxxx or 01xxxxxx - Long form (2OP)
             try execute2OPInstruction(opcode)
         }
     }
@@ -542,7 +724,13 @@ public class ZMachine {
     /// - Parameter text: Text to output
     public func outputText(_ text: String) {
         outputBuffer += text
-        outputDelegate?.didOutputText(text)
+
+        // Use window system if available (v4+), otherwise fall back to delegate
+        if let windowManager = windowManager {
+            windowManager.outputText(text)
+        } else {
+            outputDelegate?.didOutputText(text)
+        }
     }
 
     /// Read input from the current input stream
@@ -925,34 +1113,57 @@ public class ZMachine {
         return dictionary
     }
 
-    /// Convert string to ZSCII byte array
+    /// Convert string to ZSCII byte array with Unicode translation support
     ///
     /// - Parameter text: Input text string
     /// - Returns: ZSCII byte array
     private func convertToZSCII(_ text: String) -> [UInt8] {
-        // Simplified ZSCII conversion - handle basic ASCII
         return text.compactMap { char in
             let scalar = char.unicodeScalars.first?.value ?? 0
-            // Basic ZSCII mapping for printable ASCII
+
+            // Basic ZSCII mapping for characters 0-154 (map directly)
+            if scalar <= 154 {
+                return UInt8(scalar)
+            }
+
+            // For v5+, try reverse Unicode translation for extended characters
+            if version.rawValue >= 5 {
+                if let zsciiChar = unicodeToZSCII(scalar) {
+                    return zsciiChar
+                }
+            }
+
+            // Fall back to basic ASCII mapping for printable characters
             if scalar >= 32 && scalar <= 126 {
                 return UInt8(scalar)
             }
-            return nil // Skip non-printable characters
+
+            return nil // Skip characters that can't be mapped
         }
     }
 
-    /// Convert ZSCII byte array to string
+    /// Convert ZSCII byte array to string with Unicode translation support
     ///
     /// - Parameter zsciiData: ZSCII byte array
     /// - Returns: Decoded string
     private func convertFromZSCII(_ zsciiData: [UInt8]) -> String {
-        // Simplified ZSCII conversion - handle basic ASCII
         return String(zsciiData.compactMap { byte in
-            if byte >= 32 && byte <= 126 {
-                // ASCII printable characters (32-126) are guaranteed valid Unicode scalars
-                return Character(UnicodeScalar(UInt32(byte)).unsafelyUnwrapped)
+            // For v5+, use Unicode translation table for extended ZSCII characters
+            if version.rawValue >= 5 {
+                let unicodeValue = zsciiToUnicode(byte)
+                if let scalar = UnicodeScalar(unicodeValue) {
+                    return Character(scalar)
+                }
             }
-            return nil
+
+            // Fall back to basic ASCII mapping
+            if byte >= 32 && byte <= 126 {
+                if let scalar = UnicodeScalar(UInt32(byte)) {
+                    return Character(scalar)
+                }
+            }
+
+            return nil // Skip invalid characters
         })
     }
 
@@ -981,9 +1192,23 @@ public class ZMachine {
         // Reload global variables from story file
         try loadGlobals()
 
-        // Reload object tree to reset all object states
-        let objectTableOffset = header.objectTableAddress - header.staticMemoryBase
-        try objectTree.load(from: staticMemory, version: version, objectTableAddress: UInt32(objectTableOffset), staticMemoryBase: header.staticMemoryBase)
+        // Reload object tree to reset all object states - handle dynamic or static memory location
+        let objectTableAddress = header.objectTableAddress
+        let objectData: Data
+        let objectTableOffset: UInt32
+
+        if objectTableAddress < header.staticMemoryBase {
+            // Object table is in dynamic memory (now reset)
+            objectData = dynamicMemory
+            objectTableOffset = objectTableAddress
+        } else {
+            // Object table is in static memory
+            let staticOffset = objectTableAddress - header.staticMemoryBase
+            objectData = staticMemory
+            objectTableOffset = staticOffset
+        }
+
+        try objectTree.load(from: objectData, version: version, objectTableAddress: objectTableOffset, staticMemoryBase: header.staticMemoryBase, dictionaryAddress: header.dictionaryAddress)
 
         // Reload dictionary (though it shouldn't change)
         let dictionaryOffset = header.dictionaryAddress - header.staticMemoryBase
@@ -991,6 +1216,11 @@ public class ZMachine {
 
         // Reload abbreviation table
         try loadAbbreviationTable()
+
+        // Reload Unicode translation table for v5+
+        if version.rawValue >= 5 {
+            try loadUnicodeTranslationTable()
+        }
     }
 
     // MARK: - Address Unpacking
@@ -1133,6 +1363,281 @@ public class ZMachine {
             return false
         }
     }
+
+    // MARK: - Save/Restore System
+
+    /// Save current game state to Quetzal format
+    ///
+    /// Creates a complete save state including all VM state that needs to be preserved:
+    /// - Story identification for save compatibility validation
+    /// - Compressed memory delta (only changed dynamic memory)
+    /// - Complete stack state (evaluation stack + call stack with locals)
+    /// - Current program counter and execution context
+    ///
+    /// - Parameters:
+    ///   - defaultName: Suggested filename for save file
+    /// - Returns: True if save succeeded, false if cancelled or failed
+    public func saveGame(defaultName: String = "save") -> Bool {
+        guard let delegate = saveGameDelegate else {
+            outputDelegate?.didOutputText("[No save delegate configured]")
+            return false
+        }
+
+        guard let saveURL = delegate.requestSaveFileURL(defaultName: defaultName) else {
+            // User cancelled save operation
+            return false
+        }
+
+        do {
+            // Capture current game state
+            let saveState = try captureGameState()
+
+            // Write Quetzal save file
+            let quetzalData = try QuetzalWriter.writeQuetzalFile(saveState)
+
+            // Write to disk
+            try quetzalData.write(to: saveURL)
+
+            // Notify delegate of successful save
+            delegate.didSaveGame(to: saveURL)
+
+            return true
+
+        } catch {
+            delegate.saveRestoreDidFail(operation: "save", error: error)
+            return false
+        }
+    }
+
+    /// Restore game state from Quetzal format
+    ///
+    /// Loads and validates a Quetzal save file, then restores the complete VM state:
+    /// - Validates save compatibility with current story file
+    /// - Decompresses and restores dynamic memory changes
+    /// - Restores complete stack state and execution context
+    /// - Resumes execution from the saved program counter
+    ///
+    /// - Returns: True if restore succeeded, false if cancelled or failed
+    public func restoreGame() -> Bool {
+        guard let delegate = saveGameDelegate else {
+            outputDelegate?.didOutputText("[No save delegate configured]")
+            return false
+        }
+
+        guard let restoreURL = delegate.requestRestoreFileURL() else {
+            // User cancelled restore operation
+            return false
+        }
+
+        do {
+            // Read Quetzal save file
+            let saveData = try Data(contentsOf: restoreURL)
+            let saveState = try QuetzalReader.readQuetzalFile(saveData)
+
+            // Validate save compatibility
+            try validateSaveCompatibility(saveState.identification)
+
+            // Restore VM state
+            try restoreGameState(saveState)
+
+            // Notify delegate of successful restore
+            delegate.didRestoreGame(from: restoreURL)
+
+            return true
+
+        } catch {
+            delegate.saveRestoreDidFail(operation: "restore", error: error)
+            return false
+        }
+    }
+
+    /// Save UNDO state for RAM-based save/restore (v5+)
+    ///
+    /// Creates a complete save state stored in memory for the SAVE_UNDO instruction.
+    /// This allows games to implement features like multi-level undo without file I/O.
+    ///
+    /// - Throws: RuntimeError for state capture failures
+    public func saveUndo() throws {
+        guard version.rawValue >= 5 else {
+            throw RuntimeError.unsupportedOperation("SAVE_UNDO not supported in version \(version.rawValue)", location: SourceLocation.unknown)
+        }
+
+        // Capture current state for UNDO
+        undoState = try captureGameState()
+    }
+
+    /// Restore UNDO state from memory (v5+)
+    ///
+    /// Restores the VM state from the most recent SAVE_UNDO operation.
+    /// This provides instant restore functionality without file system access.
+    ///
+    /// - Returns: True if UNDO state was available and restored, false if no UNDO state
+    /// - Throws: RuntimeError for restore failures
+    public func restoreUndo() throws -> Bool {
+        guard version.rawValue >= 5 else {
+            throw RuntimeError.unsupportedOperation("RESTORE_UNDO not supported in version \(version.rawValue)", location: SourceLocation.unknown)
+        }
+
+        guard let savedUndoState = undoState else {
+            return false // No UNDO state available
+        }
+
+        // Restore state from UNDO
+        try restoreGameState(savedUndoState)
+        return true
+    }
+
+    /// Capture complete game state for save operations
+    ///
+    /// Creates a QuetzalSaveState containing all VM state needed for restoration:
+    /// - Story identification from current header
+    /// - Compressed dynamic memory delta
+    /// - Complete stack state with proper frame encoding
+    /// - Current execution context
+    ///
+    /// - Returns: Complete save state ready for serialization
+    /// - Throws: RuntimeError for state capture failures
+    private func captureGameState() throws -> QuetzalSaveState {
+        // Create story identification for save validation
+        let identification = StoryIdentification(
+            release: UInt16(storyData.subdata(in: 2..<4).withUnsafeBytes { $0.load(as: UInt16.self).bigEndian }), // Release from header bytes 2-3
+            serial: header.serialNumber,
+            checksum: header.checksum,
+            initialPC: header.initialPC
+        )
+
+        // Get original dynamic memory from story file for delta compression
+        let originalDynamicMemory = storyData.subdata(in: 0..<Int(staticMemoryBase))
+
+        // Compress memory delta (only store changes)
+        let compressedMemory = MemoryCompressor.compressMemoryDelta(
+            original: originalDynamicMemory,
+            current: dynamicMemory
+        )
+
+        // Convert call stack to Quetzal format with enhanced frame information
+        var quetzalCallStack: [QuetzalStackFrame] = []
+        var stackBase: UInt16 = 0
+
+        for frame in callStack {
+            let quetzalFrame = QuetzalStackFrame(
+                returnPC: frame.returnPC,
+                localCount: UInt8(min(frame.localCount, 15)), // Quetzal limit
+                locals: frame.locals,
+                stackBase: stackBase,
+                storeVariable: 0, // This would need to be captured during CALL
+                argumentMask: 0   // This would need argument count tracking
+            )
+            quetzalCallStack.append(quetzalFrame)
+            stackBase = UInt16(evaluationStack.count)
+        }
+
+        // Create complete stack state
+        let stackState = StackState(
+            evaluationStack: evaluationStack,
+            callStack: quetzalCallStack
+        )
+
+        return QuetzalSaveState(
+            identification: identification,
+            compressedMemory: compressedMemory,
+            stackState: stackState,
+            programCounter: programCounter,
+            interpreterData: nil, // Could store Swift-ZIL specific data
+            timestamp: Date()
+        )
+    }
+
+    /// Validate save file compatibility with current story
+    ///
+    /// Ensures the save file was created for the same story to prevent
+    /// loading incompatible save data that could corrupt game state.
+    ///
+    /// - Parameter identification: Story identification from save file
+    /// - Throws: QuetzalError for incompatible saves
+    private func validateSaveCompatibility(_ identification: StoryIdentification) throws {
+        // Check serial number (primary identifier)
+        guard identification.serial == header.serialNumber else {
+            throw QuetzalError.incompatibleSave("Save file serial '\(identification.serial)' doesn't match story '\(header.serialNumber)'")
+        }
+
+        // Check checksum (secondary validation)
+        guard identification.checksum == header.checksum else {
+            throw QuetzalError.incompatibleSave("Save file checksum \(identification.checksum) doesn't match story \(header.checksum)")
+        }
+
+        // Verify initial PC matches (ensures same version/compilation)
+        guard identification.initialPC == header.initialPC else {
+            throw QuetzalError.incompatibleSave("Save file initial PC \(identification.initialPC) doesn't match story \(header.initialPC)")
+        }
+    }
+
+    /// Restore complete game state from save data
+    ///
+    /// Restores all VM state from a Quetzal save:
+    /// - Decompresses and restores dynamic memory
+    /// - Rebuilds call stack with proper frame structure
+    /// - Restores evaluation stack contents
+    /// - Sets program counter and execution context
+    ///
+    /// - Parameter saveState: Complete save state to restore
+    /// - Throws: RuntimeError or QuetzalError for restoration failures
+    private func restoreGameState(_ saveState: QuetzalSaveState) throws {
+        // Get original dynamic memory for decompression
+        let originalDynamicMemory = storyData.subdata(in: 0..<Int(staticMemoryBase))
+
+        // Decompress and restore dynamic memory
+        dynamicMemory = try MemoryCompressor.decompressMemoryDelta(
+            compressed: saveState.compressedMemory,
+            original: originalDynamicMemory
+        )
+
+        // Restore evaluation stack
+        evaluationStack = saveState.stackState.evaluationStack
+
+        // Convert Quetzal call stack back to VM format
+        callStack.removeAll()
+        for quetzalFrame in saveState.stackState.callStack {
+            let vmFrame = StackFrame(
+                returnPC: quetzalFrame.returnPC,
+                localCount: Int(quetzalFrame.localCount),
+                locals: quetzalFrame.locals,
+                evaluationStackBase: Int(quetzalFrame.stackBase)
+            )
+            callStack.append(vmFrame)
+        }
+
+        // Restore locals from top frame (if any)
+        if let topFrame = callStack.last {
+            locals = topFrame.locals
+        } else {
+            locals.removeAll()
+        }
+
+        // Restore program counter
+        programCounter = saveState.programCounter
+
+        // Reload global variables from restored dynamic memory
+        try loadGlobals()
+
+        // Reload object tree state (objects may have moved/changed) - handle dynamic or static memory location
+        let objectTableAddress = header.objectTableAddress
+        let objectData: Data
+        let objectTableOffset: UInt32
+
+        if objectTableAddress < header.staticMemoryBase {
+            // Object table is in dynamic memory (now restored)
+            objectData = dynamicMemory
+            objectTableOffset = objectTableAddress
+        } else {
+            // Object table is in static memory
+            let staticOffset = objectTableAddress - header.staticMemoryBase
+            objectData = staticMemory
+            objectTableOffset = staticOffset
+        }
+
+        try objectTree.load(from: objectData, version: version, objectTableAddress: objectTableOffset, staticMemoryBase: header.staticMemoryBase, dictionaryAddress: header.dictionaryAddress)
+    }
 }
 
 // MARK: - Supporting Types
@@ -1152,6 +1657,7 @@ public struct StoryHeader {
     public let checksum: UInt16
     public let routineOffset: UInt32  // v6/v7 routine offset
     public let stringOffset: UInt32   // v6/v7 string offset
+    public let unicodeTableAddress: UInt32  // Unicode translation table address (v5+, bytes 52-53)
 
     public init() {
         version = .v3
@@ -1167,6 +1673,7 @@ public struct StoryHeader {
         checksum = 0
         routineOffset = 0
         stringOffset = 0
+        unicodeTableAddress = 0
     }
 
     public init(from data: Data) throws {
@@ -1232,6 +1739,17 @@ public struct StoryHeader {
             stringOffset = 0
         }
 
+        // Unicode translation table address for v5+ (bytes 52-53)
+        if zmVersion.rawValue >= 5 {
+            if data.count >= 54 {
+                unicodeTableAddress = (UInt32(data[52]) << 8) | UInt32(data[53])
+            } else {
+                unicodeTableAddress = 0
+            }
+        } else {
+            unicodeTableAddress = 0
+        }
+
         // Validate header fields according to ZIP specification
         try validateHeader(version: zmVersion, dataSize: UInt32(data.count))
     }
@@ -1262,7 +1780,8 @@ public struct StoryHeader {
             throw RuntimeError.corruptedStoryFile("Dictionary address (\(dictionaryAddress)) out of bounds", location: SourceLocation.unknown)
         }
 
-        guard objectTableAddress >= staticMemoryBase && objectTableAddress < dataSize else {
+        // Object table can be in dynamic or static memory, just needs to be within file bounds
+        guard objectTableAddress < dataSize else {
             throw RuntimeError.corruptedStoryFile("Object table address (\(objectTableAddress)) out of bounds", location: SourceLocation.unknown)
         }
 

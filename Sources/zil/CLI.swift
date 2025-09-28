@@ -348,6 +348,49 @@ struct RunCommand: ParsableCommand {
         if let saveDir = saveDir {
             print("Save directory: \(saveDir)")
         }
+
+        // Detect input type and handle appropriately
+        let storyFileURL: URL
+
+        if input.hasSuffix(".z3") || input.hasSuffix(".z4") || input.hasSuffix(".z5") ||
+           input.hasSuffix(".z6") || input.hasSuffix(".z8") {
+            // Direct story file
+            storyFileURL = URL(fileURLWithPath: input)
+            print("Loading story file: \(input)")
+        } else {
+            // ZIL source or directory - would need compilation (not implemented yet)
+            print("Error: ZIL compilation not yet implemented in run command")
+            print("Please provide a compiled story file (.z3, .z4, .z5, .z6, .z8)")
+            throw ExitCode.validationFailure
+        }
+
+        // Initialize and run Z-Machine VM
+        let vm = ZMachine()
+
+        do {
+            print("Loading story file...")
+            try vm.loadStoryFile(from: storyFileURL)
+
+            // Set up I/O delegates for CLI interaction
+            let inputDelegate = CLIInputDelegate()
+            let outputDelegate = CLIOutputDelegate()
+
+            vm.inputDelegate = inputDelegate
+            vm.outputDelegate = outputDelegate
+
+            if debug {
+                print("✓ Story file loaded successfully")
+                print("  Version: \(vm.version.rawValue)")
+                print("  Memory validation: \(vm.validateMemoryManagement() ? "✓" : "✗")")
+            }
+
+            print("Starting game...\n")
+            try vm.run()
+
+        } catch {
+            print("Error running story file: \(error)")
+            throw ExitCode.failure
+        }
     }
 }
 
@@ -502,5 +545,33 @@ struct AnalyzeCommand: ParsableCommand {
         if !all && !header && !objects && !dictionary && !strings && !routines && !memory {
             print("- All sections (default)")
         }
+    }
+}
+
+// MARK: - CLI I/O Delegates
+
+/// Input delegate for command-line interface
+class CLIInputDelegate: TextInputDelegate {
+    func requestInput() -> String {
+        print("> ", terminator: "")
+        return readLine() ?? ""
+    }
+
+    func requestInputWithTimeout(timeLimit: TimeInterval) -> (input: String?, timedOut: Bool) {
+        // Simple implementation - just return standard input for now
+        // A more sophisticated implementation would handle actual timeouts
+        let input = requestInput()
+        return (input, false)
+    }
+}
+
+/// Output delegate for command-line interface
+class CLIOutputDelegate: TextOutputDelegate {
+    func didOutputText(_ text: String) {
+        print(text, terminator: "")
+    }
+
+    func didQuit() {
+        print("\n[Game ended]")
     }
 }

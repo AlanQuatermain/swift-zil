@@ -14,16 +14,17 @@ extension ZMachine {
 
     /// Read operand types for 2OP instructions
     func read2OPOperandTypes(_ opcode: UInt8) -> (OperandType, OperandType) {
-        let type1: OperandType = ((opcode & 0x40) != 0) ? .variable : .smallConstant
-        let type2: OperandType = ((opcode & 0x20) != 0) ? .variable : .smallConstant
+        let type1: OperandType = ((opcode & 0x40) != 0) ? .variable : .largeConstant
+        let type2: OperandType = ((opcode & 0x20) != 0) ? .variable : .largeConstant
         return (type1, type2)
     }
 
     /// Read variable number of operands based on operand type byte
-    func readVarOperands(_ operandTypeByte: UInt8) throws -> [Int16] {
+    func readVarOperands(_ operandTypeByte: UInt8, maxOperands: Int = 4) throws -> [Int16] {
         var operands: [Int16] = []
 
-        for i in 0..<4 {
+        let operandLimit = min(maxOperands, 4)  // Never exceed 4 operands per instruction
+        for i in 0..<operandLimit {
             let typeCode = (operandTypeByte >> (6 - i * 2)) & 0x03
             guard let operandType = OperandType(rawValue: typeCode) else { continue }
 
@@ -332,10 +333,19 @@ extension ZMachine {
                     if i + 4 < zchars.count {
                         let high = zchars[i + 2]
                         let low = zchars[i + 3]
-                        let asciiValue = (high << 5) | low
+                        let zsciiValue = (high << 5) | low
 
-                        if let scalar = UnicodeScalar(Int(asciiValue)) {
-                            result += String(Character(scalar))
+                        // For v5+, use Unicode translation for extended ZSCII characters
+                        if version.rawValue >= 5 && zsciiValue >= 155 && zsciiValue <= 223 {
+                            let unicodeValue = zsciiToUnicode(UInt8(zsciiValue))
+                            if let scalar = UnicodeScalar(unicodeValue) {
+                                result += String(Character(scalar))
+                            }
+                        } else {
+                            // Direct ZSCII to Unicode mapping for standard characters
+                            if let scalar = UnicodeScalar(Int(zsciiValue)) {
+                                result += String(Character(scalar))
+                            }
                         }
 
                         i += 4 // Skip escape sequence
@@ -378,5 +388,81 @@ extension ZMachine {
         }
 
         return result
+    }
+}
+
+// MARK: - Unicode Translation Support (v5+)
+extension ZMachine {
+
+    /// Execute PRINT_UNICODE instruction - print a Unicode character directly
+    ///
+    /// - Parameter unicodeChar: Unicode code point to print
+    /// - Throws: RuntimeError for invalid operations
+    func executePrintUnicode(_ unicodeChar: UInt32) throws {
+        // Convert Unicode code point to Character and output
+        if let scalar = UnicodeScalar(unicodeChar) {
+            let character = Character(scalar)
+            outputText(String(character))
+        } else {
+            // Invalid Unicode code point - output replacement character
+            outputText("�")
+        }
+    }
+
+    /// Check if Unicode character can be displayed
+    ///
+    /// - Parameter unicodeChar: Unicode code point to check
+    /// - Returns: True if character can be displayed, false otherwise
+    func checkUnicodeSupport(_ unicodeChar: UInt32) -> Bool {
+        // Check if it's a valid Unicode scalar
+        guard UnicodeScalar(unicodeChar) != nil else {
+            return false
+        }
+
+        // For now, assume all valid Unicode scalars are supported
+        // Real implementations might check font availability, etc.
+        return true
+    }
+
+    /// Translate ZSCII character to Unicode using translation table
+    ///
+    /// - Parameter zsciiChar: ZSCII character code (0-255)
+    /// - Returns: Unicode code point for the character
+    func zsciiToUnicode(_ zsciiChar: UInt8) -> UInt32 {
+        let zscii = UInt32(zsciiChar)
+
+        // Standard ZSCII characters (0-154) map directly to Unicode
+        if zscii <= 154 {
+            return zscii
+        }
+
+        // Extended ZSCII characters (155-223) use Unicode translation table
+        if zscii >= 155 && zscii <= 223 {
+            return unicodeTranslationTable[zscii] ?? zscii // Default to self if not in table
+        }
+
+        // Mouse click codes and other special ZSCII (224-255) have no Unicode equivalent
+        return 63 // Question mark for unsupported characters
+    }
+
+    /// Translate Unicode character to ZSCII using reverse lookup
+    ///
+    /// - Parameter unicodeChar: Unicode code point
+    /// - Returns: ZSCII character code, or nil if no mapping exists
+    func unicodeToZSCII(_ unicodeChar: UInt32) -> UInt8? {
+        // Direct mapping for characters 0-154
+        if unicodeChar <= 154 {
+            return UInt8(unicodeChar)
+        }
+
+        // Reverse lookup in Unicode translation table
+        for (zscii, unicode) in unicodeTranslationTable {
+            if unicode == unicodeChar {
+                return UInt8(zscii)
+            }
+        }
+
+        // No mapping found
+        return nil
     }
 }

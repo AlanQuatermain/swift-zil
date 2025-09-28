@@ -523,7 +523,7 @@ public struct ObjectEntry {
         guard attribute <= maxAttribute else { return false }
 
         let bitPosition = UInt64(attribute)
-        return (attributes & (1 << bitPosition)) != 0
+        return (attributes & (UInt64(1) << bitPosition)) != 0
     }
 
     /// Set or clear object attribute
@@ -537,9 +537,9 @@ public struct ObjectEntry {
 
         let bitPosition = UInt64(attribute)
         if value {
-            attributes |= (1 << bitPosition)
+            attributes |= (UInt64(1) << bitPosition)
         } else {
-            attributes &= ~(1 << bitPosition)
+            attributes &= ~(UInt64(1) << bitPosition)
         }
     }
 

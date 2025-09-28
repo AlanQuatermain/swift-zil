@@ -19,7 +19,7 @@ struct ZAssemblerTests {
             opcode: "RTRUE"
         )
 
-        let rtrueEncoded = try encoder.encodeInstruction(rtrueInstruction, symbolTable: symbolTable, location: location)
+        let rtrueEncoded = try encoder.encodeInstruction(rtrueInstruction, symbolTable: symbolTable, location: location, currentAddress: 0x1000)
         #expect(Array(rtrueEncoded) == [0xB0])
 
         // Test RFALSE
@@ -27,7 +27,7 @@ struct ZAssemblerTests {
             opcode: "RFALSE"
         )
 
-        let rfalseEncoded = try encoder.encodeInstruction(rfalseInstruction, symbolTable: symbolTable, location: location)
+        let rfalseEncoded = try encoder.encodeInstruction(rfalseInstruction, symbolTable: symbolTable, location: location, currentAddress: 0x1000)
         #expect(Array(rfalseEncoded) == [0xB1])
     }
 
@@ -43,7 +43,7 @@ struct ZAssemblerTests {
             operands: [.number(42)]
         )
 
-        let zeroSmallEncoded = try encoder.encodeInstruction(zeroSmallInstruction, symbolTable: symbolTable, location: location)
+        let zeroSmallEncoded = try encoder.encodeInstruction(zeroSmallInstruction, symbolTable: symbolTable, location: location, currentAddress: 0x1000)
         #expect(Array(zeroSmallEncoded) == [0x90, 0x2A])  // 1OP ZERO? with small constant
     }
 
@@ -59,8 +59,8 @@ struct ZAssemblerTests {
             operands: [.atom("X"), .number(42)]
         )
 
-        let equalEncoded = try encoder.encodeInstruction(equalInstruction, symbolTable: symbolTable, location: location)
-        #expect(Array(equalEncoded) == [0x41, 0x01, 0x2A])  // 2OP EQUAL? variable, small constant
+        let equalEncoded = try encoder.encodeInstruction(equalInstruction, symbolTable: symbolTable, location: location, currentAddress: 0x1000)
+        #expect(Array(equalEncoded) == [0x41, 0x01, 0x00, 0x2A])  // 2OP EQUAL? variable, large constant (ALL constants are large in long form)
     }
 
     // MARK: - Memory Layout Tests
@@ -184,11 +184,11 @@ struct ZAssemblerTests {
 
         // Should throw error in V3
         #expect(throws: AssemblyError.self) {
-            try v3Encoder.encodeInstruction(soundInstruction, symbolTable: symbolTable, location: location)
+            try v3Encoder.encodeInstruction(soundInstruction, symbolTable: symbolTable, location: location, currentAddress: 0x1000)
         }
 
         // Should work in V4+
-        let v4Sound = try v4Encoder.encodeInstruction(soundInstruction, symbolTable: symbolTable, location: location)
+        let v4Sound = try v4Encoder.encodeInstruction(soundInstruction, symbolTable: symbolTable, location: location, currentAddress: 0x1000)
         #expect(v4Sound.count > 0)
     }
 
@@ -214,6 +214,42 @@ struct ZAssemblerTests {
 
         // V5 typically has different memory organization
         #expect(v3StaticBase != v5StaticBase || v3Story.count != v5Story.count)
+    }
+
+    @Test("Extended form instruction encoding")
+    func extendedFormInstructions() throws {
+        let v3Encoder = InstructionEncoder(version: .v3)
+        let v4Encoder = InstructionEncoder(version: .v4)
+        let symbolTable: [String: UInt32] = [:]
+        let location = SourceLocation(file: "test", line: 1, column: 1)
+
+        // Test SAVE instruction
+        let saveInstruction = ZAPInstruction.testInstruction(
+            opcode: "SAVE",
+            resultTarget: "L01"  // V4+ SAVE produces a result
+        )
+
+        // V3 SAVE should be 0OP form (0xB5)
+        let v3Save = try v3Encoder.encodeInstruction(saveInstruction, symbolTable: symbolTable, location: location, currentAddress: 0x1000)
+        #expect(Array(v3Save) == [0xB5, 0x01])  // 0xB5 + result storage L01
+
+        // V4+ SAVE should be extended form (0xBE 0x00 + operand type + result storage)
+        let v4Save = try v4Encoder.encodeInstruction(saveInstruction, symbolTable: symbolTable, location: location, currentAddress: 0x1000)
+        #expect(Array(v4Save) == [0xBE, 0x00, 0xFF, 0x01])  // 0xBE + extended opcode 0x00 + no operands (0xFF) + result storage L01
+
+        // Test RESTORE instruction
+        let restoreInstruction = ZAPInstruction.testInstruction(
+            opcode: "RESTORE",
+            resultTarget: "L01"  // V4+ RESTORE produces a result
+        )
+
+        // V3 RESTORE should be 0OP form (0xB6)
+        let v3Restore = try v3Encoder.encodeInstruction(restoreInstruction, symbolTable: symbolTable, location: location, currentAddress: 0x1000)
+        #expect(Array(v3Restore) == [0xB6, 0x01])  // 0xB6 + result storage L01
+
+        // V4+ RESTORE should be extended form (0xBE 0x01 + operand type + result storage)
+        let v4Restore = try v4Encoder.encodeInstruction(restoreInstruction, symbolTable: symbolTable, location: location, currentAddress: 0x1000)
+        #expect(Array(v4Restore) == [0xBE, 0x01, 0xFF, 0x01])  // 0xBE + extended opcode 0x01 + no operands (0xFF) + result storage L01
     }
 
     // MARK: - Checksum and Validation Tests

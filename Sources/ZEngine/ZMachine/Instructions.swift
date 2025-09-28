@@ -34,16 +34,22 @@ extension ZMachine {
 
         case 0xB5: // SAVE (v1-3)
             if version.rawValue <= 3 {
-                // Simplified save - always succeed for now
-                try pushStack(1)
+                // v1-3: SAVE pushes result onto stack (1=success, 0=failure)
+                let success = saveGame(defaultName: "save.qzl")
+                try pushStack(success ? 1 : 0)
             } else {
                 throw RuntimeError.unsupportedOperation("SAVE instruction in version \(version.rawValue)", location: SourceLocation.unknown)
             }
 
         case 0xB6: // RESTORE (v1-3)
             if version.rawValue <= 3 {
-                // Simplified restore - always fail for now
-                try pushStack(0)
+                // v1-3: RESTORE pushes result onto stack (2=success, 0=failure)
+                // Note: Success should not return since execution resumes from save point
+                let success = restoreGame()
+                if !success {
+                    // Only push failure result; success doesn't return
+                    try pushStack(0)
+                }
             } else {
                 throw RuntimeError.unsupportedOperation("RESTORE instruction in version \(version.rawValue)", location: SourceLocation.unknown)
             }
@@ -98,8 +104,14 @@ extension ZMachine {
                 throw RuntimeError.unsupportedOperation("PIRACY in version \(version.rawValue)", location: SourceLocation.unknown)
             }
 
+        // Extended/Non-standard opcodes that some games may use
+        case 0xC0...0xFF:
+            // These opcodes should now be handled by VAR instruction decoding
+            // If we reach here, it means the opcode decoding logic has an issue
+            throw RuntimeError.unsupportedOperation("Unexpected opcode 0x\(String(opcode, radix: 16, uppercase: true)) in 0OP handler at PC \(programCounter-1)", location: SourceLocation.unknown)
+
         default:
-            throw RuntimeError.unsupportedOperation("0OP opcode 0x\(String(opcode, radix: 16, uppercase: true))", location: SourceLocation.unknown)
+            throw RuntimeError.unsupportedOperation("0OP opcode 0x\(String(opcode, radix: 16, uppercase: true)) at PC \(programCounter-1)", location: SourceLocation.unknown)
         }
     }
 
@@ -116,17 +128,17 @@ extension ZMachine {
             try branchOnCondition(operand == 0)
 
         case 0x01: // GET_SIBLING
-            let siblingNumber = objectTree.getObject(UInt16(operand))?.sibling ?? 0
+            let siblingNumber = objectTree.getObject(UInt16(bitPattern: operand))?.sibling ?? 0
             try storeResult(Int16(siblingNumber))
             try branchOnCondition(siblingNumber != 0)
 
         case 0x02: // GET_CHILD
-            let childNumber = objectTree.getObject(UInt16(operand))?.child ?? 0
+            let childNumber = objectTree.getObject(UInt16(bitPattern: operand))?.child ?? 0
             try storeResult(Int16(childNumber))
             try branchOnCondition(childNumber != 0)
 
         case 0x03: // GET_PARENT
-            let parentNumber = objectTree.getObject(UInt16(operand))?.parent ?? 0
+            let parentNumber = objectTree.getObject(UInt16(bitPattern: operand))?.parent ?? 0
             try storeResult(Int16(parentNumber))
 
         case 0x04: // GET_PROP_LEN
@@ -135,12 +147,14 @@ extension ZMachine {
             try storeResult(2)
 
         case 0x05: // INC
-            let currentValue = try readVariable(UInt8(operand))
-            try writeVariable(UInt8(operand), value: currentValue + 1)
+            let variableNum = UInt8(operand & 0xFF) // Ensure positive value, variables are 0-255
+            let currentValue = try readVariable(variableNum)
+            try writeVariable(variableNum, value: currentValue + 1)
 
         case 0x06: // DEC
-            let currentValue = try readVariable(UInt8(operand))
-            try writeVariable(UInt8(operand), value: currentValue - 1)
+            let variableNum = UInt8(operand & 0xFF) // Ensure positive value, variables are 0-255
+            let currentValue = try readVariable(variableNum)
+            try writeVariable(variableNum, value: currentValue - 1)
 
         case 0x07: // PRINT_ADDR
             let text = try readZString(at: UInt32(operand))
@@ -155,11 +169,11 @@ extension ZMachine {
             }
 
         case 0x09: // REMOVE_OBJ
-            try objectTree.moveObject(UInt16(operand), toParent: 0)
+            try objectTree.moveObject(UInt16(bitPattern: operand), toParent: 0)
 
         case 0x0A: // PRINT_OBJ
             // Print object short description (property 1)
-            let description = objectTree.getProperty(UInt16(operand), property: 1)
+            let description = objectTree.getProperty(UInt16(bitPattern: operand), property: 1)
             if description != 0 {
                 let text = try readZString(at: UInt32(description))
                 outputText(text.string)
@@ -180,7 +194,8 @@ extension ZMachine {
             outputText(text.string)
 
         case 0x0E: // LOAD
-            let value = try readVariable(UInt8(operand))
+            let variableNum = UInt8(operand & 0xFF) // Ensure positive value, variables are 0-255
+            let value = try readVariable(variableNum)
             try storeResult(value)
 
         case 0x0F: // NOT (v1-4) / CALL_1N (v5+)
@@ -193,7 +208,7 @@ extension ZMachine {
             }
 
         default:
-            throw RuntimeError.unsupportedOperation("1OP opcode 0x\(String(baseOpcode, radix: 16, uppercase: true))", location: SourceLocation.unknown)
+            throw RuntimeError.unsupportedOperation("1OP opcode 0x\(String(baseOpcode, radix: 16, uppercase: true)) at PC \(programCounter-1)", location: SourceLocation.unknown)
         }
     }
 
@@ -207,6 +222,11 @@ extension ZMachine {
         let baseOpcode = opcode & 0x1F
 
         switch baseOpcode {
+        case 0x00: // Reserved/ILLEGAL - some games may use this
+            // In some implementations, this might be RTRUE or NOP
+            // For compatibility, we'll implement it as NOP
+            break
+
         case 0x01: // JE (jump if equal)
             try branchOnCondition(operand1 == operand2)
 
@@ -217,23 +237,25 @@ extension ZMachine {
             try branchOnCondition(operand1 > operand2)
 
         case 0x04: // DEC_CHK
-            let currentValue = try readVariable(UInt8(operand1))
+            let variableNum = UInt8(operand1 & 0xFF) // Ensure positive value, variables are 0-255
+            let currentValue = try readVariable(variableNum)
             let newValue = currentValue - 1
-            try writeVariable(UInt8(operand1), value: newValue)
+            try writeVariable(variableNum, value: newValue)
             try branchOnCondition(newValue < operand2)
 
         case 0x05: // INC_CHK
-            let currentValue = try readVariable(UInt8(operand1))
+            let variableNum = UInt8(operand1 & 0xFF) // Ensure positive value, variables are 0-255
+            let currentValue = try readVariable(variableNum)
             let newValue = currentValue + 1
-            try writeVariable(UInt8(operand1), value: newValue)
+            try writeVariable(variableNum, value: newValue)
             try branchOnCondition(newValue > operand2)
 
         case 0x06: // JIN (jump if object in container)
-            let objectParent = objectTree.getObject(UInt16(operand1))?.parent ?? 0
-            try branchOnCondition(objectParent == UInt16(operand2))
+            let objectParent = objectTree.getObject(UInt16(bitPattern: operand1))?.parent ?? 0
+            try branchOnCondition(objectParent == UInt16(bitPattern: operand2))
 
         case 0x07: // TEST (test attribute)
-            let hasAttribute = objectTree.getAttribute(UInt16(operand1), attribute: UInt8(operand2))
+            let hasAttribute = objectTree.getAttribute(UInt16(bitPattern: operand1), attribute: UInt8(operand2 & 0xFF))
             try branchOnCondition(hasAttribute)
 
         case 0x08: // OR
@@ -243,20 +265,21 @@ extension ZMachine {
             try storeResult(operand1 & operand2)
 
         case 0x0A: // TEST_ATTR
-            let hasAttribute = objectTree.getAttribute(UInt16(operand1), attribute: UInt8(operand2))
+            let hasAttribute = objectTree.getAttribute(UInt16(bitPattern: operand1), attribute: UInt8(operand2 & 0xFF))
             try branchOnCondition(hasAttribute)
 
         case 0x0B: // SET_ATTR
-            try objectTree.setAttribute(UInt16(operand1), attribute: UInt8(operand2), value: true)
+            try objectTree.setAttribute(UInt16(bitPattern: operand1), attribute: UInt8(operand2 & 0xFF), value: true)
 
         case 0x0C: // CLEAR_ATTR
-            try objectTree.setAttribute(UInt16(operand1), attribute: UInt8(operand2), value: false)
+            try objectTree.setAttribute(UInt16(bitPattern: operand1), attribute: UInt8(operand2 & 0xFF), value: false)
 
         case 0x0D: // STORE
-            try writeVariable(UInt8(operand1), value: operand2)
+            let variableNum = UInt8(operand1 & 0xFF) // Ensure positive value, variables are 0-255
+            try writeVariable(variableNum, value: operand2)
 
         case 0x0E: // INSERT_OBJ
-            try objectTree.moveObject(UInt16(operand1), toParent: UInt16(operand2))
+            try objectTree.moveObject(UInt16(bitPattern: operand1), toParent: UInt16(bitPattern: operand2))
 
         case 0x0F: // LOADW
             let address = UInt32(operand1) + UInt32(operand2) * 2
@@ -269,7 +292,7 @@ extension ZMachine {
             try storeResult(Int16(value))
 
         case 0x11: // GET_PROP
-            let propertyValue = objectTree.getProperty(UInt16(operand1), property: UInt8(operand2))
+            let propertyValue = objectTree.getProperty(UInt16(bitPattern: operand1), property: UInt8(operand2 & 0xFF))
             try storeResult(Int16(bitPattern: propertyValue))
 
         case 0x12: // GET_PROP_ADDR
@@ -333,8 +356,224 @@ extension ZMachine {
             }
 
         default:
-            throw RuntimeError.unsupportedOperation("2OP opcode 0x\(String(baseOpcode, radix: 16, uppercase: true))", location: SourceLocation.unknown)
+            throw RuntimeError.unsupportedOperation("2OP opcode 0x\(String(baseOpcode, radix: 16, uppercase: true)) at PC \(programCounter-1)", location: SourceLocation.unknown)
         }
+    }
+
+    // MARK: - 2OP VAR Instructions (variable form with 2 operands)
+
+    func execute2OPVarInstruction(_ opcode: UInt8) throws {
+        // Read operand type byte for variable form instructions
+        let operandTypeByte = try readByte(at: programCounter)
+        programCounter += 1
+
+        // Parse up to 2 operands for 2OP VAR instructions
+        let operands = try readVarOperands(operandTypeByte, maxOperands: 2)
+        guard operands.count >= 2 else {
+            throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+        }
+
+        let operand1 = operands[0]
+        let operand2 = operands[1]
+        let baseOpcode = opcode & 0x1F  // Extract bits 4-0
+
+        switch baseOpcode {
+        case 0x01: // JE (jump if equal) - VAR form
+            try branchOnCondition(operand1 == operand2)
+
+        case 0x02: // JL (jump if less) - VAR form
+            try branchOnCondition(operand1 < operand2)
+
+        case 0x03: // JG (jump if greater) - VAR form
+            try branchOnCondition(operand1 > operand2)
+
+        case 0x04: // DEC_CHK - VAR form
+            let currentValue = try readVariable(UInt8(operand1 & 0xFF))
+            let newValue = currentValue - 1
+            try writeVariable(UInt8(operand1 & 0xFF), value: newValue)
+            try branchOnCondition(newValue < operand2)
+
+        case 0x05: // INC_CHK - VAR form (this is 0xC5!)
+            let currentValue = try readVariable(UInt8(operand1 & 0xFF))
+            let newValue = currentValue + 1
+            try writeVariable(UInt8(operand1 & 0xFF), value: newValue)
+            try branchOnCondition(newValue > operand2)
+
+        case 0x06: // JIN (jump if object in container) - VAR form
+            let objectParent = objectTree.getObject(UInt16(bitPattern: operand1))?.parent ?? 0
+            try branchOnCondition(objectParent == UInt16(bitPattern: operand2))
+
+        case 0x07: // TEST (test attribute) - VAR form
+            let hasAttribute = objectTree.getAttribute(UInt16(bitPattern: operand1), attribute: UInt8(operand2 & 0xFF))
+            try branchOnCondition(hasAttribute)
+
+        case 0x08: // OR - VAR form
+            try storeResult(operand1 | operand2)
+
+        case 0x09: // AND - VAR form
+            try storeResult(operand1 & operand2)
+
+        case 0x0A: // TEST_ATTR - VAR form
+            let hasAttribute = objectTree.getAttribute(UInt16(bitPattern: operand1), attribute: UInt8(operand2 & 0xFF))
+            try branchOnCondition(hasAttribute)
+
+        case 0x0B: // SET_ATTR - VAR form
+            try objectTree.setAttribute(UInt16(bitPattern: operand1), attribute: UInt8(operand2 & 0xFF), value: true)
+
+        case 0x0C: // CLEAR_ATTR - VAR form
+            try objectTree.setAttribute(UInt16(bitPattern: operand1), attribute: UInt8(operand2 & 0xFF), value: false)
+
+        case 0x0D: // STORE - VAR form
+            try writeVariable(UInt8(operand1 & 0xFF), value: operand2)
+
+        case 0x0E: // INSERT_OBJ - VAR form
+            try objectTree.moveObject(UInt16(bitPattern: operand1), toParent: UInt16(bitPattern: operand2))
+
+        case 0x0F: // LOADW - VAR form
+            let address = UInt32(operand1) + UInt32(operand2) * 2
+            let value = try readWord(at: address)
+            try storeResult(Int16(bitPattern: value))
+
+        case 0x10: // LOADB - VAR form
+            let address = UInt32(operand1) + UInt32(operand2)
+            let value = try readByte(at: address)
+            try storeResult(Int16(value))
+
+        case 0x11: // GET_PROP - VAR form
+            let propertyValue = objectTree.getProperty(UInt16(bitPattern: operand1), property: UInt8(operand2 & 0xFF))
+            try storeResult(Int16(bitPattern: propertyValue))
+
+        case 0x12: // GET_PROP_ADDR - VAR form
+            // Simplified: return a dummy address
+            try storeResult(0x1000)
+
+        case 0x13: // GET_NEXT_PROP - VAR form
+            // Simplified: return next property number
+            let nextProp = operand2 == 0 ? 1 : max(0, operand2 - 1)
+            try storeResult(nextProp)
+
+        case 0x14: // ADD - VAR form
+            try storeResult(operand1 + operand2)
+
+        case 0x15: // SUB - VAR form
+            try storeResult(operand1 - operand2)
+
+        case 0x16: // MUL - VAR form
+            try storeResult(operand1 * operand2)
+
+        case 0x17: // DIV - VAR form
+            guard operand2 != 0 else {
+                throw RuntimeError.divisionByZero(location: SourceLocation.unknown)
+            }
+            try storeResult(operand1 / operand2)
+
+        case 0x18: // MOD - VAR form
+            guard operand2 != 0 else {
+                throw RuntimeError.divisionByZero(location: SourceLocation.unknown)
+            }
+            try storeResult(operand1 % operand2)
+
+        case 0x19: // CALL_2S - VAR form (v4+)
+            if version.rawValue >= 4 {
+                let result = try callRoutine(UInt32(operand1), arguments: [operand2])
+                try storeResult(result)
+            } else {
+                throw RuntimeError.unsupportedOperation("CALL_2S in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
+        case 0x1A: // CALL_2N - VAR form (v5+)
+            if version.rawValue >= 5 {
+                _ = try callRoutine(UInt32(operand1), arguments: [operand2])
+            } else {
+                throw RuntimeError.unsupportedOperation("CALL_2N in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
+        default:
+            throw RuntimeError.unsupportedOperation("2OP VAR opcode 0x\(String(baseOpcode, radix: 16, uppercase: true)) at PC \(programCounter-1)", location: SourceLocation.unknown)
+        }
+    }
+
+    // MARK: - Window Instructions (v4+)
+
+    /// Execute SPLIT_WINDOW instruction (2OP opcode 0xA0)
+    ///
+    /// Creates or resizes the upper status window.
+    ///
+    /// - Parameter lines: Number of lines for upper window (0 to remove it)
+    /// - Throws: RuntimeError for unsupported versions or window operations
+    func executeSplitWindow(lines: Int16) throws {
+        guard version.rawValue >= 4 else {
+            throw RuntimeError.unsupportedOperation("SPLIT_WINDOW not supported in version \(version.rawValue)", location: SourceLocation.unknown)
+        }
+
+        try windowManager?.splitWindow(lines: Int(lines))
+    }
+
+    /// Execute SET_WINDOW instruction (2OP opcode 0xA1)
+    ///
+    /// Switches the current output window.
+    ///
+    /// - Parameter windowNumber: Window number (0, 1, or -3 for current)
+    /// - Throws: RuntimeError for invalid window operations
+    func executeSetWindow(_ windowNumber: Int16) throws {
+        guard version.rawValue >= 4 else {
+            throw RuntimeError.unsupportedOperation("SET_WINDOW not supported in version \(version.rawValue)", location: SourceLocation.unknown)
+        }
+
+        // Handle special window number -3 (current window)
+        let targetWindow = windowNumber == -3 ? windowManager?.currentWindow ?? 0 : Int(windowNumber)
+
+        // Validate window number range
+        guard targetWindow >= 0 && targetWindow <= 1 else {
+            // Invalid window numbers are ignored (no error)
+            return
+        }
+
+        windowManager?.setCurrentWindow(targetWindow)
+    }
+
+    /// Execute ERASE_WINDOW instruction (2OP opcode 0xA2)
+    ///
+    /// Clears the specified window or all windows.
+    ///
+    /// - Parameter windowSpec: Window number (-2 for all, -1 for current, or specific window)
+    /// - Throws: RuntimeError for invalid window operations
+    func executeEraseWindow(_ windowSpec: Int16) throws {
+        guard version.rawValue >= 4 else {
+            throw RuntimeError.unsupportedOperation("ERASE_WINDOW not supported in version \(version.rawValue)", location: SourceLocation.unknown)
+        }
+
+        windowManager?.eraseWindow(Int(windowSpec))
+    }
+
+    /// Execute ERASE_LINE instruction (2OP opcode 0xA3)
+    ///
+    /// Clears from cursor to end of current line.
+    ///
+    /// - Parameter value: Should be 1 for current line
+    /// - Throws: RuntimeError for invalid operations
+    func executeEraseLine(_ value: Int16) throws {
+        guard version.rawValue >= 4 else {
+            throw RuntimeError.unsupportedOperation("ERASE_LINE not supported in version \(version.rawValue)", location: SourceLocation.unknown)
+        }
+
+        windowManager?.eraseLine(Int(value))
+    }
+
+    /// Execute SET_CURSOR instruction (2OP opcode 0xA4)
+    ///
+    /// Positions cursor in current window (non-scrolling windows only).
+    ///
+    /// - Parameters:
+    ///   - line: Line number (1-based)
+    ///   - column: Column number (1-based)
+    /// - Throws: RuntimeError for invalid cursor operations
+    func executeSetCursor(line: Int16, column: Int16) throws {
+        guard version.rawValue >= 4 else {
+            throw RuntimeError.unsupportedOperation("SET_CURSOR not supported in version \(version.rawValue)", location: SourceLocation.unknown)
+        }
+
+        try windowManager?.setCursor(line: Int(line), column: Int(column))
     }
 
     // MARK: - VAR Instructions (variable number of operands)
@@ -380,7 +619,7 @@ extension ZMachine {
             guard operands.count >= 3 else {
                 throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
             }
-            try objectTree.setProperty(UInt16(operands[0]), property: UInt8(operands[1]), value: UInt16(bitPattern: operands[2]))
+            try objectTree.setProperty(UInt16(bitPattern: operands[0]), property: UInt8(operands[1] & 0xFF), value: UInt16(bitPattern: operands[2]))
 
         case 0x04: // READ (v1-3) / SREAD (v4+)
             guard operands.count >= 2 else {
@@ -446,27 +685,98 @@ extension ZMachine {
                     throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
                 }
                 let value = try popStack()
-                try writeVariable(UInt8(operands[0]), value: value)
+                try writeVariable(UInt8(operands[0] & 0xFF), value: value)
             } else {
                 let value = try popStack()
                 try storeResult(value)
             }
 
-        case 0x1B: // TOKENISE (V5+)
+        case 0x1B: // TOKENISE (V5+) / SET_COLOUR (V5+)
             if version.rawValue >= 5 {
                 guard operands.count >= 2 else {
                     throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
                 }
 
-                let textBufferAddr = UInt32(operands[0])
-                let parseBufferAddr = UInt32(operands[1])
-                let dictionaryAddr = operands.count > 2 ? UInt32(operands[2]) : 0
-                let flags = operands.count > 3 ? UInt8(operands[3]) : 0
+                // Heuristic to distinguish SET_COLOUR from TOKENISE:
+                // SET_COLOUR typically has 2-3 operands with small color values (0-15)
+                // TOKENISE has 2-4 operands with the first two being buffer addresses (typically larger values)
+                let firstOperand = UInt16(bitPattern: operands[0])
+                let secondOperand = UInt16(bitPattern: operands[1])
 
-                try executeTokeniseInstruction(textBuffer: textBufferAddr, parseBuffer: parseBufferAddr,
-                                             dictionary: dictionaryAddr, flags: flags)
+                if operands.count <= 3 && firstOperand <= 15 && secondOperand <= 15 {
+                    // Likely SET_COLOUR: foreground, background, [window]
+                    let foreground = operands[0]
+                    let background = operands[1]
+                    let window = operands.count > 2 ? operands[2] : -1
+                    try executeSetColour(foreground: foreground, background: background, window: window)
+                } else {
+                    // Likely TOKENISE: text_buffer, parse_buffer, [dictionary], [flags]
+                    let textBufferAddr = UInt32(operands[0])
+                    let parseBufferAddr = UInt32(operands[1])
+                    let dictionaryAddr = operands.count > 2 ? UInt32(operands[2]) : 0
+                    let flags = operands.count > 3 ? UInt8(operands[3] & 0xFF) : 0
+
+                    try executeTokeniseInstruction(textBuffer: textBufferAddr, parseBuffer: parseBufferAddr,
+                                                 dictionary: dictionaryAddr, flags: flags)
+                }
             } else {
-                throw RuntimeError.unsupportedOperation("TOKENISE in version \(version.rawValue)", location: SourceLocation.unknown)
+                throw RuntimeError.unsupportedOperation("TOKENISE/SET_COLOUR in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
+        case 0x0A: // SPLIT_WINDOW (v4+)
+            if version.rawValue >= 4 {
+                guard !operands.isEmpty else {
+                    throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+                }
+                try executeSplitWindow(lines: operands[0])
+            } else {
+                throw RuntimeError.unsupportedOperation("SPLIT_WINDOW in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
+        case 0x0B: // SET_WINDOW (v4+)
+            if version.rawValue >= 4 {
+                guard !operands.isEmpty else {
+                    throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+                }
+                try executeSetWindow(operands[0])
+            } else {
+                throw RuntimeError.unsupportedOperation("SET_WINDOW in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
+        case 0x0C: // ERASE_WINDOW (v4+)
+            if version.rawValue >= 4 {
+                let windowSpec = operands.isEmpty ? -1 : operands[0]  // Default to current window
+                try executeEraseWindow(windowSpec)
+            } else {
+                throw RuntimeError.unsupportedOperation("ERASE_WINDOW in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
+        case 0x0D: // ERASE_LINE (v4+)
+            if version.rawValue >= 4 {
+                let value = operands.isEmpty ? 1 : operands[0]  // Default to current line
+                try executeEraseLine(value)
+            } else {
+                throw RuntimeError.unsupportedOperation("ERASE_LINE in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
+        case 0x0E: // SET_CURSOR (v4+)
+            if version.rawValue >= 4 {
+                guard operands.count >= 2 else {
+                    throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+                }
+                try executeSetCursor(line: operands[0], column: operands[1])
+            } else {
+                throw RuntimeError.unsupportedOperation("SET_CURSOR in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
+        case 0x11: // SET_TEXT_STYLE (v4+)
+            if version.rawValue >= 4 {
+                guard !operands.isEmpty else {
+                    throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+                }
+                try executeSetTextStyle(operands[0])
+            } else {
+                throw RuntimeError.unsupportedOperation("SET_TEXT_STYLE in version \(version.rawValue)", location: SourceLocation.unknown)
             }
 
         default:
@@ -485,18 +795,23 @@ extension ZMachine {
         switch opcode {
         case 0x00: // SAVE (V4+)
             if version.rawValue >= 4 {
-                // Extended save with optional table argument
-                // Simplified implementation - always succeed for now
-                try storeResult(1)
+                // v4+: SAVE stores result (1=success, 0=failure)
+                // Optional table argument for aux memory save (not implemented)
+                let success = saveGame(defaultName: "save.qzl")
+                try storeResult(success ? 1 : 0)
             } else {
                 throw RuntimeError.unsupportedOperation("Extended SAVE in version \(version.rawValue)", location: SourceLocation.unknown)
             }
 
         case 0x01: // RESTORE (V4+)
             if version.rawValue >= 4 {
-                // Extended restore with optional table argument
-                // Simplified implementation - always fail for now
-                try storeResult(0)
+                // v4+: RESTORE stores result (2=success, 0=failure)
+                // Note: Success should not return since execution resumes from save point
+                let success = restoreGame()
+                if !success {
+                    // Only store failure result; success doesn't return
+                    try storeResult(0)
+                }
             } else {
                 throw RuntimeError.unsupportedOperation("Extended RESTORE in version \(version.rawValue)", location: SourceLocation.unknown)
             }
@@ -552,7 +867,31 @@ extension ZMachine {
                 throw RuntimeError.unsupportedOperation("SET_FONT in version \(version.rawValue)", location: SourceLocation.unknown)
             }
 
-        case 0x05: // DRAW_PICTURE (V6)
+        case 0x05: // SOUND_EFFECT (EXT opcode 5, v4+)
+            if version.rawValue >= 4 {
+                guard !operands.isEmpty else {
+                    throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+                }
+
+                let effect = UInt16(bitPattern: operands[0])
+                let volume = operands.count > 1 ? UInt8(max(1, min(operands[1], 8))) : 8 // Default volume
+                let repeats = operands.count > 2 ? UInt8(operands[2] & 0xFF) : 1
+                let routine = operands.count > 3 ? UInt32(operands[3]) : 0
+
+                let success = soundManager?.executeSoundEffect(
+                    effect: effect,
+                    volume: volume,
+                    repeats: repeats,
+                    routine: routine
+                ) ?? false
+
+                // Some games check the result to determine if sound is supported
+                try storeResult(success ? 1 : 0)
+            } else {
+                throw RuntimeError.unsupportedOperation("SOUND_EFFECT in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
+        case 0x06: // DRAW_PICTURE (V6) - moved from 0x05
             if version.rawValue == 6 {
                 guard operands.count >= 3 else {
                     throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
@@ -564,7 +903,7 @@ extension ZMachine {
                 throw RuntimeError.unsupportedOperation("DRAW_PICTURE in version \(version.rawValue)", location: SourceLocation.unknown)
             }
 
-        case 0x06: // PICTURE_DATA (V6)
+        case 0x07: // PICTURE_DATA (V6) - moved from 0x06
             if version.rawValue == 6 {
                 guard !operands.isEmpty else {
                     throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
@@ -576,18 +915,7 @@ extension ZMachine {
                 throw RuntimeError.unsupportedOperation("PICTURE_DATA in version \(version.rawValue)", location: SourceLocation.unknown)
             }
 
-        case 0x07: // ERASE_PICTURE (V6)
-            if version.rawValue == 6 {
-                guard !operands.isEmpty else {
-                    throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
-                }
-                // Erase picture - not implemented
-                // No-op for now
-            } else {
-                throw RuntimeError.unsupportedOperation("ERASE_PICTURE in version \(version.rawValue)", location: SourceLocation.unknown)
-            }
-
-        case 0x08: // SET_MARGINS (V6)
+        case 0x08: // SET_MARGINS (V6) - moved from 0x08 (keeping original position)
             if version.rawValue == 6 {
                 guard operands.count >= 2 else {
                     throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
@@ -600,18 +928,30 @@ extension ZMachine {
 
         case 0x09: // SAVE_UNDO (V5+)
             if version.rawValue >= 5 {
-                // Save undo state - simplified implementation
-                // Return success (1)
-                try storeResult(1)
+                // v5+: Save UNDO state to memory (RAM-based save)
+                do {
+                    try saveUndo()
+                    try storeResult(1) // Success
+                } catch {
+                    try storeResult(0) // Failure
+                }
             } else {
                 throw RuntimeError.unsupportedOperation("SAVE_UNDO in version \(version.rawValue)", location: SourceLocation.unknown)
             }
 
         case 0x0A: // RESTORE_UNDO (V5+)
             if version.rawValue >= 5 {
-                // Restore undo state - simplified implementation
-                // Return failure (0)
-                try storeResult(0)
+                // v5+: Restore UNDO state from memory
+                // Note: Success doesn't return (execution continues from UNDO point)
+                do {
+                    let success = try restoreUndo()
+                    if !success {
+                        // Only store failure result; success doesn't return
+                        try storeResult(0)
+                    }
+                } catch {
+                    try storeResult(0) // Failure
+                }
             } else {
                 throw RuntimeError.unsupportedOperation("RESTORE_UNDO in version \(version.rawValue)", location: SourceLocation.unknown)
             }
@@ -621,14 +961,9 @@ extension ZMachine {
                 guard !operands.isEmpty else {
                     throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
                 }
-                // Print Unicode character
+                // Print Unicode character using the enhanced method
                 let charCode = UInt32(operands[0])
-                if let scalar = UnicodeScalar(charCode) {
-                    outputText(String(Character(scalar)))
-                } else {
-                    // Invalid Unicode - print replacement character
-                    outputText("?")
-                }
+                try executePrintUnicode(charCode)
             } else {
                 throw RuntimeError.unsupportedOperation("PRINT_UNICODE in version \(version.rawValue)", location: SourceLocation.unknown)
             }
@@ -638,10 +973,10 @@ extension ZMachine {
                 guard !operands.isEmpty else {
                     throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
                 }
-                // Check if Unicode character can be displayed
+                // Check if Unicode character can be displayed using enhanced method
                 let charCode = UInt32(operands[0])
-                let canDisplay = UnicodeScalar(charCode) != nil
-                try storeResult(canDisplay ? 1 : 0)
+                let canDisplay = checkUnicodeSupport(charCode)
+                try storeResult(canDisplay ? 3 : 0) // 3 = can input and output, 0 = cannot
             } else {
                 throw RuntimeError.unsupportedOperation("CHECK_UNICODE in version \(version.rawValue)", location: SourceLocation.unknown)
             }
@@ -807,6 +1142,124 @@ extension ZMachine {
 
         default:
             throw RuntimeError.unsupportedOperation("Extended opcode 0x\(String(opcode, radix: 16, uppercase: true))", location: SourceLocation.unknown)
+        }
+    }
+
+    // MARK: - Text Style and Color Instructions
+
+    /// Execute SET_TEXT_STYLE instruction
+    /// - Parameter styleFlags: Style flags (0-15)
+    /// - Throws: RuntimeError for invalid operations or version restrictions
+    func executeSetTextStyle(_ styleFlags: Int16) throws {
+        // SET_TEXT_STYLE is supported in v4+, with some interpreters supporting it in v3
+        if version.rawValue < 3 {
+            // v1-2: No style support
+            throw RuntimeError.unsupportedOperation("SET_TEXT_STYLE not supported in version \(version.rawValue)", location: SourceLocation.unknown)
+        }
+
+        // v3+: Allow style setting with version-appropriate restrictions
+        let textStyle = convertToTextStyle(UInt8(styleFlags & 0xFF))
+
+        // Version-specific style restrictions
+        let allowedStyle = applyVersionStyleRestrictions(textStyle)
+
+        windowManager?.getCurrentWindow()?.setStyle(allowedStyle)
+    }
+
+    /// Execute SET_COLOUR instruction
+    /// - Parameters:
+    ///   - foreground: Foreground color code (0-15)
+    ///   - background: Background color code (0-15)
+    ///   - window: Window number (-1 = current window)
+    /// - Throws: RuntimeError for invalid operations
+    func executeSetColour(foreground: Int16, background: Int16, window: Int16) throws {
+        let fg = ZMachineColor.from(UInt8(foreground & 0xFF))
+        let bg = ZMachineColor.from(UInt8(background & 0xFF))
+
+        // Apply version-specific color restrictions
+        let allowedFg = applyVersionColorRestrictions(fg)
+        let allowedBg = applyVersionColorRestrictions(bg)
+
+        if window == -1 {
+            // Set colors for current window
+            windowManager?.getCurrentWindow()?.setColors(foreground: allowedFg, background: allowedBg)
+        } else {
+            // Set colors for specific window
+            windowManager?.getWindow(Int(window))?.setColors(foreground: allowedFg, background: allowedBg)
+        }
+    }
+
+    /// Convert Z-Machine style flags to TextStyle
+    /// - Parameter flags: Z-Machine style flags (0-15)
+    /// - Returns: TextStyle option set
+    private func convertToTextStyle(_ flags: UInt8) -> TextStyle {
+        guard flags != 0 else {
+            return .roman  // 0 = normal/roman text
+        }
+
+        var style: TextStyle = []
+        if flags & 0x01 != 0 { style.insert(.reverse) }    // Bit 0: Reverse video
+        if flags & 0x02 != 0 { style.insert(.bold) }       // Bit 1: Bold
+        if flags & 0x04 != 0 { style.insert(.italic) }     // Bit 2: Italic
+        if flags & 0x08 != 0 { style.insert(.fixedPitch) } // Bit 3: Fixed-pitch font
+
+        return style
+    }
+
+    /// Apply version-specific style restrictions
+    /// - Parameter style: Original style flags
+    /// - Returns: Style flags adjusted for Z-Machine version compatibility
+    private func applyVersionStyleRestrictions(_ style: TextStyle) -> TextStyle {
+        switch version.rawValue {
+        case 1...3:
+            // v1-3: Very limited style support
+            // Only reverse video and fixed-pitch are commonly supported
+            return style.intersection([.reverse, .fixedPitch])
+
+        case 4:
+            // v4: Full basic style support
+            // All standard styles are supported
+            return style
+
+        case 5...6:
+            // v5-6: Full style support with colors
+            // All styles supported
+            return style
+
+        case 7...8:
+            // v7-8: Extended style support
+            // All styles supported with potential extensions
+            return style
+
+        default:
+            // Unknown version - be conservative
+            return style.intersection([.reverse, .fixedPitch])
+        }
+    }
+
+    /// Apply version-specific color restrictions
+    /// - Parameter color: Original color code
+    /// - Returns: Color adjusted for Z-Machine version compatibility
+    private func applyVersionColorRestrictions(_ color: ZMachineColor) -> ZMachineColor {
+        switch version.rawValue {
+        case 1...4:
+            // v1-4: No color support - return default
+            return .default
+
+        case 5:
+            // v5: Standard color support (colors 0-9)
+            if color.rawValue > 9 {
+                return .default
+            }
+            return color
+
+        case 6...8:
+            // v6-8: Full color support including grey shades (colors 0-13)
+            return color
+
+        default:
+            // Unknown version - no color support
+            return .default
         }
     }
 }

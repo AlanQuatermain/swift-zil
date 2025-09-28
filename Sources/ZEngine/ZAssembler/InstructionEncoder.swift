@@ -1,11 +1,22 @@
 /// Z-Machine Instruction Encoder - Converts ZAP instructions to Z-Machine bytecode
 import Foundation
 
+/// Instruction form types for proper operand encoding
+enum InstructionForm {
+    case shortForm     // 0OP and 1OP instructions
+    case longForm      // 2OP instructions (0x00-0x7F) - ALWAYS use large constants
+    case variableForm  // 2OP VAR and VAR instructions (0xC0-0xFF)
+    case extendedForm  // Extended form (v5+)
+}
+
 /// Encodes ZAP assembly instructions into Z-Machine bytecode format
 public class InstructionEncoder {
 
     public let version: ZMachineVersion
     private var output: [UInt8] = []
+
+    // Track which opcodes are extended form based on instruction mapping
+    private var isExtendedOpcode: [UInt8: Bool] = [:]
 
     public init(version: ZMachineVersion) {
         self.version = version
@@ -20,10 +31,19 @@ public class InstructionEncoder {
     /// - Returns: Size in bytes
     /// - Throws: AssemblyError for encoding failures
     public func calculateInstructionSize(_ instruction: ZAPInstruction, at address: UInt32, symbolTable: [String: UInt32] = [:]) throws -> UInt32 {
+        // Clear extended opcode tracking
+        isExtendedOpcode.removeAll()
+
         let opcode = try mapOpcodeToZMachine(instruction.opcode)
+        let instructionForm = determineInstructionForm(opcode)
 
         // Basic size calculation: opcode byte + operands
         var size: UInt32 = 1 // Opcode byte
+
+        // Extended form needs additional byte for the actual opcode
+        if instructionForm == .extendedForm {
+            size += 1  // 0xBE prefix + actual opcode
+        }
 
         // Add operand type byte for variable form instructions
         if needsOperandTypeByte(opcode) {
@@ -32,7 +52,7 @@ public class InstructionEncoder {
 
         // Add operand sizes
         for operand in instruction.operands {
-            size += try calculateOperandSize(operand)
+            size += try calculateOperandSize(operand, instructionForm: instructionForm)
         }
 
         // Add result storage byte if instruction produces a result
@@ -77,21 +97,25 @@ public class InstructionEncoder {
     public func encodeInstruction(_ instruction: ZAPInstruction, symbolTable: [String: UInt32], location: SourceLocation, currentAddress: UInt32) throws -> Data {
         output.removeAll()
 
+        // Clear extended opcode tracking
+        isExtendedOpcode.removeAll()
+
         let opcode = try mapOpcodeToZMachine(instruction.opcode)
         let operands = instruction.operands
+        let instructionForm = determineInstructionForm(opcode)
 
         // Determine instruction form and encode opcode
         try encodeOpcode(opcode, operands: operands)
 
         // Add operand type byte for variable form instructions
         if needsOperandTypeByte(opcode) {
-            let typeByte = try encodeOperandTypeByte(for: operands)
+            let typeByte = try encodeOperandTypeByte(for: operands, instructionForm: instructionForm)
             output.append(typeByte)
         }
 
         // Encode operands
         for operand in operands {
-            try encodeOperand(operand, symbolTable: symbolTable)
+            try encodeOperand(operand, instructionForm: instructionForm, symbolTable: symbolTable)
         }
 
         // Encode result storage if instruction produces a result
@@ -117,150 +141,284 @@ public class InstructionEncoder {
         // Map ZAP opcodes to Z-Machine opcodes based on version
         // Reference: Z-Machine Standards Document v1.0, Section 14
 
-        switch opcode.uppercased() {
+        let upperOpcode = opcode.uppercased()
+        var zmachineOpcode: UInt8
+
+        switch upperOpcode {
 
         // ===== 2OP Instructions (Long Form: 0x00-0x1F) =====
-        case "JE", "EQUAL?": return 0x01      // Jump if equal
-        case "JL", "LESS?": return 0x02       // Jump if less than
-        case "JG", "GRTR?": return 0x03       // Jump if greater than
-        case "JIN": return 0x06               // Jump if object in object
-        case "TEST": return 0x07              // Test bitmap
-        case "OR": return 0x08                // Bitwise OR
-        case "AND": return 0x09               // Bitwise AND
-        case "TEST_ATTR", "FSET?": return 0x0A  // Test attribute
-        case "SET_ATTR", "FSET": return 0x0B    // Set attribute
-        case "CLEAR_ATTR", "FCLEAR": return 0x0C // Clear attribute
-        case "STORE": return 0x0D             // Store variable
-        case "INSERT_OBJ": return 0x0E        // Insert object into object
-        case "LOADW": return 0x0F             // Load word from array
-        case "LOADB": return 0x10             // Load byte from array
-        case "GET_PROP": return 0x11          // Get property value
-        case "GET_PROP_ADDR": return 0x12     // Get property address
-        case "GET_NEXT_PROP": return 0x13     // Get next property number
-        case "ADD": return 0x14               // Addition
-        case "SUB": return 0x15               // Subtraction
-        case "MUL": return 0x16               // Multiplication
-        case "DIV": return 0x17               // Division
-        case "MOD": return 0x18               // Modulo
-        case "SET_COLOUR": return 0x1B        // Set text colors (V5+)
-        case "THROW": return 0x1C             // Throw to catch (V5+)
+        case "JE", "EQUAL?":
+            zmachineOpcode = 0x01      // Jump if equal
+        case "JL", "LESS?":
+            zmachineOpcode = 0x02       // Jump if less than
+        case "JG", "GRTR?":
+            zmachineOpcode = 0x03       // Jump if greater than
+        case "JIN":
+            zmachineOpcode = 0x06               // Jump if object in object
+        case "TEST":
+            zmachineOpcode = 0x07              // Test bitmap
+        case "OR":
+            zmachineOpcode = 0x08                // Bitwise OR
+        case "AND":
+            zmachineOpcode = 0x09               // Bitwise AND
+        case "TEST_ATTR", "FSET?":
+            zmachineOpcode = 0x0A  // Test attribute
+        case "SET_ATTR", "FSET":
+            zmachineOpcode = 0x0B    // Set attribute
+        case "CLEAR_ATTR", "FCLEAR":
+            zmachineOpcode = 0x0C // Clear attribute
+        case "STORE":
+            zmachineOpcode = 0x0D             // Store variable
+        case "INSERT_OBJ":
+            zmachineOpcode = 0x0E        // Insert object into object
+        case "LOADW":
+            zmachineOpcode = 0x0F             // Load word from array
+        case "LOADB":
+            zmachineOpcode = 0x10             // Load byte from array
+        case "GET_PROP":
+            zmachineOpcode = 0x11          // Get property value
+        case "GET_PROP_ADDR":
+            zmachineOpcode = 0x12     // Get property address
+        case "GET_NEXT_PROP":
+            zmachineOpcode = 0x13     // Get next property number
+        case "ADD":
+            zmachineOpcode = 0x14               // Addition
+        case "SUB":
+            zmachineOpcode = 0x15               // Subtraction
+        case "MUL":
+            zmachineOpcode = 0x16               // Multiplication
+        case "DIV":
+            zmachineOpcode = 0x17               // Division
+        case "MOD":
+            zmachineOpcode = 0x18               // Modulo
+        case "SET_COLOUR":
+            zmachineOpcode = 0x1B        // Set text colors (V5+)
+        case "THROW":
+            zmachineOpcode = 0x1C             // Throw to catch (V5+)
 
         // ===== 1OP Instructions (Short Form: 0x80-0x8F base) =====
-        case "JZ", "ZERO?": return 0x80       // Jump if zero
-        case "GET_SIBLING", "NEXT?": return 0x81  // Get sibling object
-        case "GET_CHILD", "FIRST?": return 0x82   // Get child object
-        case "GET_PARENT", "LOC": return 0x83     // Get parent object
-        case "GET_PROP_LEN": return 0x84      // Get property length
-        case "INC": return 0x85               // Increment variable
-        case "DEC": return 0x86               // Decrement variable
-        case "PRINT_ADDR": return 0x87        // Print string at address
-        case "REMOVE_OBJ", "REMOVE": return 0x89  // Remove object from tree
-        case "PRINT_OBJ", "PRINTN": return 0x8A   // Print object short name
-        case "RET", "RETURN": return 0x8B     // Return from routine
-        case "JUMP": return 0x8C              // Unconditional jump
-        case "PRINT_PADDR": return 0x8D       // Print string at packed address
-        case "LOAD": return 0x8E              // Load variable
-        case "CALL_1N": return 0x8F           // Call routine, discard result (V5+)
+        case "JZ", "ZERO?":
+            zmachineOpcode = 0x80       // Jump if zero
+        case "GET_SIBLING", "NEXT?":
+            zmachineOpcode = 0x81  // Get sibling object
+        case "GET_CHILD", "FIRST?":
+            zmachineOpcode = 0x82   // Get child object
+        case "GET_PARENT", "LOC":
+            zmachineOpcode = 0x83     // Get parent object
+        case "GET_PROP_LEN":
+            zmachineOpcode = 0x84      // Get property length
+        case "INC":
+            zmachineOpcode = 0x85               // Increment variable
+        case "DEC":
+            zmachineOpcode = 0x86               // Decrement variable
+        case "PRINT_ADDR":
+            zmachineOpcode = 0x87        // Print string at address
+        case "REMOVE_OBJ", "REMOVE":
+            zmachineOpcode = 0x89  // Remove object from tree
+        case "PRINT_OBJ", "PRINTN":
+            zmachineOpcode = 0x8A   // Print object short name
+        case "RET", "RETURN":
+            zmachineOpcode = 0x8B     // Return from routine
+        case "JUMP":
+            zmachineOpcode = 0x8C              // Unconditional jump
+        case "PRINT_PADDR":
+            zmachineOpcode = 0x8D       // Print string at packed address
+        case "LOAD":
+            zmachineOpcode = 0x8E              // Load variable
+        case "CALL_1N":
+            zmachineOpcode = 0x8F           // Call routine, discard result (V5+)
 
         // ===== 0OP Instructions (Short Form: 0xB0-0xBF) =====
-        case "RTRUE": return 0xB0             // Return true
-        case "RFALSE": return 0xB1            // Return false
-        case "PRINT", "PRINTI": return 0xB2       // Print literal string
-        case "PRINT_RET", "PRINTR": return 0xB3   // Print literal string and return
-        case "NOP": return 0xB4               // No operation (V4+)
-        case "SAVE": return 0xB5              // Save game (V1-3: branch, V4+: store)
-        case "RESTORE": return 0xB6           // Restore game (V1-3: branch, V4+: store)
-        case "RESTART": return 0xB7           // Restart game
-        case "RET_POPPED": return 0xB8        // Return popped value
-        case "POP": return 0xB9               // Pop from stack (V1)/catch (V5+)
-        case "QUIT": return 0xBA              // Quit game
-        case "NEW_LINE", "CRLF": return 0xBB  // Print newline
-        case "SHOW_STATUS": return 0xBC       // Show status line (V3)
-        case "VERIFY": return 0xBD            // Verify story file integrity
-        case "EXTENDED": return 0xBE          // Extended opcode follows (V5+)
-        case "PIRACY": return 0xBF            // Piracy check (V5+)
+        case "RTRUE":
+            zmachineOpcode = 0xB0             // Return true
+        case "RFALSE":
+            zmachineOpcode = 0xB1            // Return false
+        case "PRINT", "PRINTI":
+            zmachineOpcode = 0xB2       // Print literal string
+        case "PRINT_RET", "PRINTR":
+            zmachineOpcode = 0xB3   // Print literal string and return
+        case "NOP":
+            zmachineOpcode = 0xB4               // No operation (V4+)
+        case "SAVE":
+            // V1-3: 0OP branch instruction, V4+: Extended form store instruction
+            if version.rawValue <= 3 {
+                zmachineOpcode = 0xB5
+            } else {
+                zmachineOpcode = 0x00  // Extended opcode 0x00
+                isExtendedOpcode[zmachineOpcode] = true
+            }
+        case "RESTORE":
+            // V1-3: 0OP branch instruction, V4+: Extended form store instruction
+            if version.rawValue <= 3 {
+                zmachineOpcode = 0xB6
+            } else {
+                zmachineOpcode = 0x01  // Extended opcode 0x01
+                isExtendedOpcode[zmachineOpcode] = true
+            }
+        case "RESTART":
+            zmachineOpcode = 0xB7           // Restart game
+        case "RET_POPPED":
+            zmachineOpcode = 0xB8        // Return popped value
+        case "POP":
+            zmachineOpcode = 0xB9               // Pop from stack (V1)/catch (V5+)
+        case "QUIT":
+            zmachineOpcode = 0xBA              // Quit game
+        case "NEW_LINE", "CRLF":
+            zmachineOpcode = 0xBB  // Print newline
+        case "SHOW_STATUS":
+            zmachineOpcode = 0xBC       // Show status line (V3)
+        case "VERIFY":
+            zmachineOpcode = 0xBD            // Verify story file integrity
+        case "EXTENDED":
+            zmachineOpcode = 0xBE          // Extended opcode follows (V5+)
+        case "PIRACY":
+            zmachineOpcode = 0xBF            // Piracy check (V5+)
 
         // ===== VAR Instructions (Variable Form: 0xE0-0xFF) =====
-        case "CALL", "CALL_VS": return 0xE0   // Call routine with variable args
-        case "STOREW": return 0xE1            // Store word in array
-        case "STOREB": return 0xE2            // Store byte in array
-        case "PUT_PROP": return 0xE3          // Set property value
-        case "SREAD", "READ": return 0xE4     // Read line of input (SREAD v1-4, READ v5+)
-        case "PRINT_CHAR": return 0xE5        // Print character
-        case "PRINT_NUM", "PRINTD": return 0xE6   // Print signed number
-        case "RANDOM": return 0xE7            // Random number generator
-        case "PUSH": return 0xE8              // Push onto stack
-        case "PULL": return 0xE9              // Pull from stack
-        case "SPLIT_WINDOW": return 0xEA      // Split screen window (V3+)
-        case "SET_WINDOW": return 0xEB        // Set current window (V3+)
-        case "CALL_VS2": return 0xEC          // Call routine, up to 7 args (V4+)
-        case "ERASE_WINDOW": return 0xED      // Clear window (V4+)
-        case "ERASE_LINE": return 0xEE        // Clear line in window (V4+)
-        case "SET_CURSOR": return 0xEF        // Set cursor position (V4+)
-        case "GET_CURSOR": return 0xF0        // Get cursor position (V4+)
-        case "SET_TEXT_STYLE": return 0xF1    // Set text style (V4+)
-        case "BUFFER_MODE": return 0xF2       // Set buffering mode (V4+)
-        case "OUTPUT_STREAM": return 0xF3     // Select output streams (V3+)
-        case "INPUT_STREAM": return 0xF4      // Select input stream (V3+)
-        case "SOUND_EFFECT": return 0xF5      // Play sound effect (V4+)
-        case "READ_CHAR": return 0xF6         // Read single character (V4+)
-        case "SCAN_TABLE": return 0xF7        // Scan table for value (V4+)
-        case "NOT": return 0xF8               // Bitwise complement (V5+)
-        case "CALL_VN": return 0xF9           // Call routine, discard result (V5+)
-        case "CALL_VN2": return 0xFA          // Call routine, up to 7 args, discard result (V5+)
-        case "TOKENISE": return 0xFB          // Tokenize text (V5+)
-        case "ENCODE_TEXT": return 0xFC       // Encode text (V5+)
-        case "COPY_TABLE": return 0xFD        // Copy table (V5+)
-        case "PRINT_TABLE": return 0xFE       // Print table (V5+)
-        case "CHECK_ARG_COUNT": return 0xFF   // Check argument count (V5+)
+        case "CALL", "CALL_VS":
+            zmachineOpcode = 0xE0   // Call routine with variable args
+        case "STOREW":
+            zmachineOpcode = 0xE1            // Store word in array
+        case "STOREB":
+            zmachineOpcode = 0xE2            // Store byte in array
+        case "PUT_PROP":
+            zmachineOpcode = 0xE3          // Set property value
+        case "SREAD", "READ":
+            zmachineOpcode = 0xE4     // Read line of input (SREAD v1-4, READ v5+)
+        case "PRINT_CHAR":
+            zmachineOpcode = 0xE5        // Print character
+        case "PRINT_NUM", "PRINTD":
+            zmachineOpcode = 0xE6   // Print signed number
+        case "RANDOM":
+            zmachineOpcode = 0xE7            // Random number generator
+        case "PUSH":
+            zmachineOpcode = 0xE8              // Push onto stack
+        case "PULL":
+            zmachineOpcode = 0xE9              // Pull from stack
+        case "SPLIT_WINDOW":
+            zmachineOpcode = 0xEA      // Split screen window (V3+)
+        case "SET_WINDOW":
+            zmachineOpcode = 0xEB        // Set current window (V3+)
+        case "CALL_VS2":
+            zmachineOpcode = 0xEC          // Call routine, up to 7 args (V4+)
+        case "ERASE_WINDOW":
+            zmachineOpcode = 0xED      // Clear window (V4+)
+        case "ERASE_LINE":
+            zmachineOpcode = 0xEE        // Clear line in window (V4+)
+        case "SET_CURSOR":
+            zmachineOpcode = 0xEF        // Set cursor position (V4+)
+        case "GET_CURSOR":
+            zmachineOpcode = 0xF0        // Get cursor position (V4+)
+        case "SET_TEXT_STYLE":
+            zmachineOpcode = 0xF1    // Set text style (V4+)
+        case "BUFFER_MODE":
+            zmachineOpcode = 0xF2       // Set buffering mode (V4+)
+        case "OUTPUT_STREAM":
+            zmachineOpcode = 0xF3     // Select output streams (V3+)
+        case "INPUT_STREAM":
+            zmachineOpcode = 0xF4      // Select input stream (V3+)
+        case "SOUND_EFFECT":
+            zmachineOpcode = 0xF5      // Play sound effect (V4+)
+        case "READ_CHAR":
+            zmachineOpcode = 0xF6         // Read single character (V4+)
+        case "SCAN_TABLE":
+            zmachineOpcode = 0xF7        // Scan table for value (V4+)
+        case "NOT":
+            zmachineOpcode = 0xF8               // Bitwise complement (V5+)
+        case "CALL_VN":
+            zmachineOpcode = 0xF9           // Call routine, discard result (V5+)
+        case "CALL_VN2":
+            zmachineOpcode = 0xFA          // Call routine, up to 7 args, discard result (V5+)
+        case "TOKENISE":
+            zmachineOpcode = 0xFB          // Tokenize text (V5+)
+        case "ENCODE_TEXT":
+            zmachineOpcode = 0xFC       // Encode text (V5+)
+        case "COPY_TABLE":
+            zmachineOpcode = 0xFD        // Copy table (V5+)
+        case "PRINT_TABLE":
+            zmachineOpcode = 0xFE       // Print table (V5+)
+        case "CHECK_ARG_COUNT":
+            zmachineOpcode = 0xFF   // Check argument count (V5+)
 
         // ===== Version-Specific Instructions =====
         case "DEC_CHK":
             guard version.rawValue >= 4 else {
                 throw AssemblyError.versionMismatch(instruction: "DEC_CHK", version: Int(version.rawValue), location: SourceLocation(file: "assembly", line: 0, column: 0))
             }
-            return 0x04
+            zmachineOpcode = 0x04
 
         case "INC_CHK":
             guard version.rawValue >= 4 else {
                 throw AssemblyError.versionMismatch(instruction: "INC_CHK", version: Int(version.rawValue), location: SourceLocation(file: "assembly", line: 0, column: 0))
             }
-            return 0x05
+            zmachineOpcode = 0x05
 
         case "CALL_2S":
             guard version.rawValue >= 4 else {
                 throw AssemblyError.versionMismatch(instruction: "CALL_2S", version: Int(version.rawValue), location: SourceLocation(file: "assembly", line: 0, column: 0))
             }
-            return 0x19
+            zmachineOpcode = 0x19
 
         case "CALL_1S":
             guard version.rawValue >= 4 else {
                 throw AssemblyError.versionMismatch(instruction: "CALL_1S", version: Int(version.rawValue), location: SourceLocation(file: "assembly", line: 0, column: 0))
             }
-            return 0x88
+            zmachineOpcode = 0x88
 
         case "CALL_2N":
             guard version.rawValue >= 5 else {
                 throw AssemblyError.versionMismatch(instruction: "CALL_2N", version: Int(version.rawValue), location: SourceLocation(file: "assembly", line: 0, column: 0))
             }
-            return 0x1A
+            zmachineOpcode = 0x1A
 
         case "SOUND":
             // SOUND is an alias for SOUND_EFFECT in V4+
             guard version.rawValue >= 4 else {
                 throw AssemblyError.versionMismatch(instruction: "SOUND", version: Int(version.rawValue), location: SourceLocation(file: "assembly", line: 0, column: 0))
             }
-            return 0xF5  // SOUND_EFFECT
+            zmachineOpcode = 0xF5  // SOUND_EFFECT
 
         default:
             throw AssemblyError.invalidInstruction(opcode, location: SourceLocation(file: "assembly", line: 0, column: 0))
         }
+
+        return zmachineOpcode
+    }
+
+    private func determineInstructionForm(_ opcode: UInt8) -> InstructionForm {
+        // Check if this opcode was marked as extended during mapping
+        if isExtendedOpcode[opcode] == true {
+            return .extendedForm
+        } else if opcode == 0xBE {
+            // Extended form prefix (0xBE prefix, v5+)
+            return .extendedForm
+        } else if opcode >= 0xE0 {
+            // VAR form (0xE0-0xFF)
+            return .variableForm
+        } else if opcode >= 0xC0 {
+            // Variable form 2OP instructions (0xC0-0xDF)
+            return .variableForm
+        } else if opcode >= 0xB0 && opcode <= 0xBF {
+            // 0OP form (0xB0-0xBF)
+            return .shortForm
+        } else if opcode >= 0x80 && opcode <= 0xAF {
+            // 1OP form (0x80-0xAF)
+            return .shortForm
+        } else {
+            // 2OP long form (0x00-0x7F)
+            return .longForm
+        }
     }
 
     private func encodeOpcode(_ opcode: UInt8, operands: [ZValue]) throws {
-        // Determine instruction form based on opcode value and encode with operand types
+        let instructionForm = determineInstructionForm(opcode)
 
-        if opcode >= 0xE0 {
+        if instructionForm == .extendedForm {
+            // Extended form (0xBE prefix + actual extended opcode, v5+)
+            output.append(0xBE)  // Extended form prefix
+            output.append(opcode)  // Actual extended opcode
+
+        } else if opcode >= 0xE0 {
             // VAR form (0xE0-0xFF)
             output.append(opcode)
 
@@ -278,30 +436,29 @@ public class InstructionEncoder {
             var encodedOpcode = opcode & 0xCF  // Clear bits 5-4
 
             if !operands.isEmpty {
-                let operandType = determineOperandType(operands[0])
+                let operandType = determineOperandType(operands[0], instructionForm: instructionForm)
                 encodedOpcode |= (operandType.rawValue << 4)
             }
             output.append(encodedOpcode)
 
         } else {
-            // 2OP form (0x00-0x7F)
-            // Encode operand types in bit 6 (first operand) and bit 5 (second operand)
+            // 2OP long form (0x00-0x7F) - CRITICAL: ALL constants are large (2-byte) here
             var encodedOpcode = opcode
 
             if operands.count >= 1 {
-                let operandType1 = determineOperandType(operands[0])
+                let operandType1 = determineOperandType(operands[0], instructionForm: instructionForm)
                 if operandType1 == .variable {
                     encodedOpcode |= 0x40  // Set bit 6 for variable
                 }
-                // Small/large constants are 0, so no change needed
+                // Constants are ALWAYS large in long form - bit remains 0
             }
 
             if operands.count >= 2 {
-                let operandType2 = determineOperandType(operands[1])
+                let operandType2 = determineOperandType(operands[1], instructionForm: instructionForm)
                 if operandType2 == .variable {
                     encodedOpcode |= 0x20  // Set bit 5 for variable
                 }
-                // Small/large constants are 0, so no change needed
+                // Constants are ALWAYS large in long form - bit remains 0
             }
 
             output.append(encodedOpcode)
@@ -309,17 +466,17 @@ public class InstructionEncoder {
     }
 
     private func needsOperandTypeByte(_ opcode: UInt8) -> Bool {
-        // VAR form instructions (0xC0-0xFF except 0OP) need operand type byte
-        return opcode >= 0xC0 && opcode < 0xE0  // 2OP VAR
-            || opcode >= 0xE0  // VAR
+        let instructionForm = determineInstructionForm(opcode)
+        // VAR form and Extended form instructions need operand type byte
+        return instructionForm == .variableForm || instructionForm == .extendedForm
     }
 
-    private func encodeOperandTypeByte(for operands: [ZValue]) throws -> UInt8 {
+    private func encodeOperandTypeByte(for operands: [ZValue], instructionForm: InstructionForm) throws -> UInt8 {
         // Encode operand types into a single byte (2 bits per operand, up to 4 operands)
         var typeByte: UInt8 = 0xFF  // Start with all omitted (11)
 
         for (index, operand) in operands.enumerated() where index < 4 {
-            let operandType = determineOperandType(operand)
+            let operandType = determineOperandType(operand, instructionForm: instructionForm)
             let shift = 6 - (index * 2)  // Positions: 6, 4, 2, 0
 
             // Clear the 2 bits for this operand
@@ -331,10 +488,15 @@ public class InstructionEncoder {
         return typeByte
     }
 
-    private func determineOperandType(_ operand: ZValue) -> ZConstants.ArgumentType {
+    private func determineOperandType(_ operand: ZValue, instructionForm: InstructionForm) -> ZConstants.ArgumentType {
         switch operand {
         case .number(let value):
-            // Small constants: 0-255, Large constants: anything else
+            // CRITICAL: In 2OP long form, ALL constants are large (2-byte)
+            // This matches the Z-Machine specification and VM implementation
+            if instructionForm == .longForm {
+                return .large
+            }
+            // For other forms, size depends on value magnitude
             return abs(value) <= 255 ? .small : .large
         case .atom(_):
             // Variables use variable type
@@ -347,10 +509,15 @@ public class InstructionEncoder {
         }
     }
 
-    private func calculateOperandSize(_ operand: ZValue) throws -> UInt32 {
+    private func calculateOperandSize(_ operand: ZValue, instructionForm: InstructionForm) throws -> UInt32 {
         switch operand {
         case .number(let value):
-            // Small constants (0-255) use 1 byte, large constants use 2 bytes
+            // CRITICAL: In 2OP long form, ALL constants are large (2-byte)
+            // This matches the Z-Machine specification and VM implementation
+            if instructionForm == .longForm {
+                return 2
+            }
+            // For other forms, operand size follows small/large rules
             return abs(value) <= 255 ? 1 : 2
         case .atom(_):
             // Variables and symbols typically use 1 byte
@@ -363,16 +530,19 @@ public class InstructionEncoder {
         }
     }
 
-    private func encodeOperand(_ operand: ZValue, symbolTable: [String: UInt32]) throws {
+    private func encodeOperand(_ operand: ZValue, instructionForm: InstructionForm, symbolTable: [String: UInt32]) throws {
         switch operand {
         case .number(let value):
-            if abs(value) <= 255 {
-                // Small constant
+            let operandType = determineOperandType(operand, instructionForm: instructionForm)
+
+            if operandType == .small {
+                // Small constant (1 byte)
                 output.append(UInt8(value & 0xFF))
             } else {
-                // Large constant
-                let bytes = withUnsafeBytes(of: value.bigEndian) { Array($0) }
-                output.append(contentsOf: bytes)
+                // Large constant (2 bytes) - used for all constants in 2OP long form
+                let word = UInt16(bitPattern: Int16(value))
+                output.append(UInt8((word >> 8) & 0xFF))  // High byte first
+                output.append(UInt8(word & 0xFF))         // Low byte second
             }
 
         case .atom(let name):
@@ -393,12 +563,13 @@ public class InstructionEncoder {
 
         case .string:
             // String references are handled by memory layout
-            // For now, output a placeholder
+            // For now, output a placeholder (always 2 bytes)
             output.append(0x00)
             output.append(0x00)
 
         default:
-            // Other types - use placeholder
+            // Other types - use placeholder (always 2 bytes)
+            output.append(0x00)
             output.append(0x00)
         }
     }
