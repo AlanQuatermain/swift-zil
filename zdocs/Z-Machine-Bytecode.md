@@ -103,11 +103,11 @@ oooo = opcode (0-15)
 #### Long Form (1 byte opcode + operands)
 ```
 Bit:  7 6 5 4 3 2 1 0
-      a b o o o o o o
+      0 a b o o o o o
 
 a = first operand type (0=small constant, 1=variable)
 b = second operand type (0=small constant, 1=variable)
-oooooo = opcode (0-63)
+oooooo = opcode (0-31)
 ```
 
 #### Variable Form (1-2 byte opcode + operands)

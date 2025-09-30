@@ -58,16 +58,18 @@ extension ZMachine {
             try restart()
 
         case 0xB8: // RET_POPPED
-            let value = try popStack()
-            try returnFromRoutine(value: Int16(value))
+            let value = popStack()
+            try returnFromRoutine(value: value)
 
         case 0xB9: // POP (v1) / CATCH (v5+)
             if version.rawValue >= 5 {
                 // CATCH - return current stack frame
-                try pushStack(Int16(callStack.count))
+                // Safely convert call stack count to Int16, clamping to prevent overflow
+                let stackFrameCount = min(callStack.count, Int(Int16.max))
+                try pushStack(Int16(stackFrameCount))
             } else {
                 // POP
-                _ = try popStack()
+                _ = popStack()
             }
 
         case 0xBA: // QUIT
@@ -172,11 +174,11 @@ extension ZMachine {
             try objectTree.moveObject(UInt16(bitPattern: operand), toParent: 0)
 
         case 0x0A: // PRINT_OBJ
-            // Print object short description (property 1)
-            let description = objectTree.getProperty(UInt16(bitPattern: operand), property: 1)
-            if description != 0 {
-                let text = try readZString(at: UInt32(description))
-                outputText(text.string)
+            // Print object short description from property table (not property 1)
+            // print("DEBUG: PRINT_OBJ instruction - object=\(UInt16(bitPattern: operand))")
+            let description = try readObjectShortDescription(UInt16(bitPattern: operand))
+            if !description.isEmpty {
+                outputText(description)
             }
 
         case 0x0B: // RET
@@ -184,7 +186,7 @@ extension ZMachine {
 
         case 0x0C: // JUMP
             // Signed 16-bit offset
-            let signedOffset = Int16(bitPattern: UInt16(operand))
+            let signedOffset = operand
             programCounter = UInt32(Int32(programCounter) + Int32(signedOffset) - 2)
 
         case 0x0D: // PRINT_PADDR
@@ -254,9 +256,11 @@ extension ZMachine {
             let objectParent = objectTree.getObject(UInt16(bitPattern: operand1))?.parent ?? 0
             try branchOnCondition(objectParent == UInt16(bitPattern: operand2))
 
-        case 0x07: // TEST (test attribute)
-            let hasAttribute = objectTree.getAttribute(UInt16(bitPattern: operand1), attribute: UInt8(operand2 & 0xFF))
-            try branchOnCondition(hasAttribute)
+        case 0x07: // TEST (bitwise test)
+            // Branch if all bits in operand2 are set in operand1
+            // Equivalent to PEZ: (~operand1 & operand2) == 0
+            let result = (operand1 & operand2) == operand2
+            try branchOnCondition(result)
 
         case 0x08: // OR
             try storeResult(operand1 | operand2)
@@ -282,17 +286,23 @@ extension ZMachine {
             try objectTree.moveObject(UInt16(bitPattern: operand1), toParent: UInt16(bitPattern: operand2))
 
         case 0x0F: // LOADW
-            let address = UInt32(operand1) + UInt32(operand2) * 2
+            // Emulate ZIP behavior: 16-bit address calculation with wraparound
+            let address = UInt32(UInt16(bitPattern: operand1) &+ UInt16(bitPattern: operand2) &* 2)
             let value = try readWord(at: address)
             try storeResult(Int16(bitPattern: value))
 
         case 0x10: // LOADB
-            let address = UInt32(operand1) + UInt32(operand2)
+            // Emulate ZIP behavior: 16-bit address calculation with wraparound
+            let address = UInt32(UInt16(bitPattern: operand1) &+ UInt16(bitPattern: operand2))
             let value = try readByte(at: address)
             try storeResult(Int16(value))
 
         case 0x11: // GET_PROP
-            let propertyValue = objectTree.getProperty(UInt16(bitPattern: operand1), property: UInt8(operand2 & 0xFF))
+            let objectNum = UInt16(bitPattern: operand1)
+            let propertyNum = UInt8(operand2 & 0xFF)
+            // print("DEBUG: GET_PROP instruction - object=\(objectNum), property=\(propertyNum)")
+            let propertyValue = objectTree.getProperty(objectNum, property: propertyNum)
+            // print("DEBUG: GET_PROP - got property value \(propertyValue) (0x\(String(propertyValue, radix: 16, uppercase: true)))")
             try storeResult(Int16(bitPattern: propertyValue))
 
         case 0x12: // GET_PROP_ADDR
@@ -355,6 +365,28 @@ extension ZMachine {
                 throw RuntimeError.unsupportedOperation("THROW in version \(version.rawValue)", location: SourceLocation.unknown)
             }
 
+        case 0x1D: // Reserved/Illegal
+            // This opcode is reserved and not defined in the Z-Machine specification
+            // Some early or non-standard games might use it, so we'll treat it as NOP
+            break
+
+        case 0x1E: // CALL_2S (alternate encoding, v4+)
+            if version.rawValue >= 4 {
+                // This is an alternate encoding for CALL_2S with different operand format
+                let result = try callRoutine(UInt32(operand1), arguments: [operand2])
+                try storeResult(result)
+            } else {
+                throw RuntimeError.unsupportedOperation("CALL_2S (0x1E) in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
+        case 0x1F: // CALL_2N (alternate encoding, v5+)
+            if version.rawValue >= 5 {
+                // This is an alternate encoding for CALL_2N with different operand format
+                _ = try callRoutine(UInt32(operand1), arguments: [operand2])
+            } else {
+                throw RuntimeError.unsupportedOperation("CALL_2N (0x1F) in version \(version.rawValue)", location: SourceLocation.unknown)
+            }
+
         default:
             throw RuntimeError.unsupportedOperation("2OP opcode 0x\(String(baseOpcode, radix: 16, uppercase: true)) at PC \(programCounter-1)", location: SourceLocation.unknown)
         }
@@ -367,80 +399,141 @@ extension ZMachine {
         let operandTypeByte = try readByte(at: programCounter)
         programCounter += 1
 
-        // Parse up to 2 operands for 2OP VAR instructions
-        let operands = try readVarOperands(operandTypeByte, maxOperands: 2)
-        guard operands.count >= 2 else {
+        // Parse ALL operands for 2OP VAR instructions (not limited to 2)
+        // The "2OP" refers to instruction semantics, not operand count limits
+        let operands = try readVarOperands(operandTypeByte, maxOperands: 4)
+        guard !operands.isEmpty else {
             throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
         }
 
-        let operand1 = operands[0]
-        let operand2 = operands[1]
         let baseOpcode = opcode & 0x1F  // Extract bits 4-0
 
         switch baseOpcode {
         case 0x01: // JE (jump if equal) - VAR form
-            try branchOnCondition(operand1 == operand2)
+            // JE tests if first operand equals ANY of the remaining operands
+            guard operands.count >= 2 else {
+                throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+            }
+            let testValue = operands[0]
+            let matches = operands.dropFirst().contains(testValue)
+            try branchOnCondition(matches)
 
         case 0x02: // JL (jump if less) - VAR form
-            try branchOnCondition(operand1 < operand2)
+            guard operands.count >= 2 else {
+                throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+            }
+            try branchOnCondition(operands[0] < operands[1])
 
         case 0x03: // JG (jump if greater) - VAR form
-            try branchOnCondition(operand1 > operand2)
+            guard operands.count >= 2 else {
+                throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+            }
+            try branchOnCondition(operands[0] > operands[1])
 
         case 0x04: // DEC_CHK - VAR form
-            let currentValue = try readVariable(UInt8(operand1 & 0xFF))
+            guard operands.count >= 2 else {
+                throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+            }
+            let currentValue = try readVariable(UInt8(operands[0] & 0xFF))
             let newValue = currentValue - 1
-            try writeVariable(UInt8(operand1 & 0xFF), value: newValue)
-            try branchOnCondition(newValue < operand2)
+            try writeVariable(UInt8(operands[0] & 0xFF), value: newValue)
+            try branchOnCondition(newValue < operands[1])
 
         case 0x05: // INC_CHK - VAR form (this is 0xC5!)
-            let currentValue = try readVariable(UInt8(operand1 & 0xFF))
+            guard operands.count >= 2 else {
+                throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+            }
+            let currentValue = try readVariable(UInt8(operands[0] & 0xFF))
             let newValue = currentValue + 1
-            try writeVariable(UInt8(operand1 & 0xFF), value: newValue)
-            try branchOnCondition(newValue > operand2)
+            try writeVariable(UInt8(operands[0] & 0xFF), value: newValue)
+            try branchOnCondition(newValue > operands[1])
 
         case 0x06: // JIN (jump if object in container) - VAR form
-            let objectParent = objectTree.getObject(UInt16(bitPattern: operand1))?.parent ?? 0
-            try branchOnCondition(objectParent == UInt16(bitPattern: operand2))
+            guard operands.count >= 2 else {
+                throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+            }
+            let objectParent = objectTree.getObject(UInt16(bitPattern: operands[0]))?.parent ?? 0
+            try branchOnCondition(objectParent == UInt16(bitPattern: operands[1]))
 
-        case 0x07: // TEST (test attribute) - VAR form
-            let hasAttribute = objectTree.getAttribute(UInt16(bitPattern: operand1), attribute: UInt8(operand2 & 0xFF))
-            try branchOnCondition(hasAttribute)
+        case 0x07: // TEST (bitwise test) - VAR form
+            guard operands.count >= 2 else {
+                throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+            }
+            // Branch if all bits in operands[1] are set in operands[0]
+            // Equivalent to PEZ: (~operands[0] & operands[1]) == 0
+            let result = (operands[0] & operands[1]) == operands[1]
+            try branchOnCondition(result)
 
         case 0x08: // OR - VAR form
-            try storeResult(operand1 | operand2)
+            guard operands.count >= 2 else {
+                throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+            }
+            try storeResult(operands[0] | operands[1])
 
         case 0x09: // AND - VAR form
-            try storeResult(operand1 & operand2)
+            guard operands.count >= 2 else {
+                throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+            }
+            try storeResult(operands[0] & operands[1])
 
         case 0x0A: // TEST_ATTR - VAR form
-            let hasAttribute = objectTree.getAttribute(UInt16(bitPattern: operand1), attribute: UInt8(operand2 & 0xFF))
+            guard operands.count >= 2 else {
+                throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+            }
+            let hasAttribute = objectTree.getAttribute(UInt16(bitPattern: operands[0]), attribute: UInt8(operands[1] & 0xFF))
             try branchOnCondition(hasAttribute)
 
         case 0x0B: // SET_ATTR - VAR form
-            try objectTree.setAttribute(UInt16(bitPattern: operand1), attribute: UInt8(operand2 & 0xFF), value: true)
+            guard operands.count >= 2 else {
+                throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+            }
+            try objectTree.setAttribute(UInt16(bitPattern: operands[0]), attribute: UInt8(operands[1] & 0xFF), value: true)
 
         case 0x0C: // CLEAR_ATTR - VAR form
-            try objectTree.setAttribute(UInt16(bitPattern: operand1), attribute: UInt8(operand2 & 0xFF), value: false)
+            guard operands.count >= 2 else {
+                throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+            }
+            try objectTree.setAttribute(UInt16(bitPattern: operands[0]), attribute: UInt8(operands[1] & 0xFF), value: false)
 
         case 0x0D: // STORE - VAR form
-            try writeVariable(UInt8(operand1 & 0xFF), value: operand2)
+            guard operands.count >= 2 else {
+                throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+            }
+            try writeVariable(UInt8(operands[0] & 0xFF), value: operands[1])
 
         case 0x0E: // INSERT_OBJ - VAR form
-            try objectTree.moveObject(UInt16(bitPattern: operand1), toParent: UInt16(bitPattern: operand2))
+            guard operands.count >= 2 else {
+                throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+            }
+            try objectTree.moveObject(UInt16(bitPattern: operands[0]), toParent: UInt16(bitPattern: operands[1]))
 
         case 0x0F: // LOADW - VAR form
-            let address = UInt32(operand1) + UInt32(operand2) * 2
+            guard operands.count >= 2 else {
+                throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+            }
+            // Emulate ZIP behavior: 16-bit address calculation with wraparound
+            let address = UInt32(UInt16(bitPattern: operands[0]) &+ UInt16(bitPattern: operands[1]) &* 2)
             let value = try readWord(at: address)
             try storeResult(Int16(bitPattern: value))
 
         case 0x10: // LOADB - VAR form
-            let address = UInt32(operand1) + UInt32(operand2)
+            guard operands.count >= 2 else {
+                throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+            }
+            // Emulate ZIP behavior: 16-bit address calculation with wraparound
+            let address = UInt32(UInt16(bitPattern: operands[0]) &+ UInt16(bitPattern: operands[1]))
             let value = try readByte(at: address)
             try storeResult(Int16(value))
 
         case 0x11: // GET_PROP - VAR form
-            let propertyValue = objectTree.getProperty(UInt16(bitPattern: operand1), property: UInt8(operand2 & 0xFF))
+            guard operands.count >= 2 else {
+                throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+            }
+            let objectNum = UInt16(bitPattern: operands[0])
+            let propertyNum = UInt8(operands[1] & 0xFF)
+            print("DEBUG: GET_PROP (VAR form) instruction - object=\(objectNum), property=\(propertyNum)")
+            let propertyValue = objectTree.getProperty(objectNum, property: propertyNum)
+            print("DEBUG: GET_PROP (VAR form) - got property value \(propertyValue) (0x\(String(propertyValue, radix: 16, uppercase: true)))")
             try storeResult(Int16(bitPattern: propertyValue))
 
         case 0x12: // GET_PROP_ADDR - VAR form
@@ -448,42 +541,66 @@ extension ZMachine {
             try storeResult(0x1000)
 
         case 0x13: // GET_NEXT_PROP - VAR form
+            guard operands.count >= 2 else {
+                throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+            }
             // Simplified: return next property number
-            let nextProp = operand2 == 0 ? 1 : max(0, operand2 - 1)
+            let nextProp = operands[1] == 0 ? 1 : max(0, operands[1] - 1)
             try storeResult(nextProp)
 
         case 0x14: // ADD - VAR form
-            try storeResult(operand1 + operand2)
+            guard operands.count >= 2 else {
+                throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+            }
+            try storeResult(operands[0] + operands[1])
 
         case 0x15: // SUB - VAR form
-            try storeResult(operand1 - operand2)
+            guard operands.count >= 2 else {
+                throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+            }
+            try storeResult(operands[0] - operands[1])
 
         case 0x16: // MUL - VAR form
-            try storeResult(operand1 * operand2)
+            guard operands.count >= 2 else {
+                throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+            }
+            try storeResult(operands[0] * operands[1])
 
         case 0x17: // DIV - VAR form
-            guard operand2 != 0 else {
+            guard operands.count >= 2 else {
+                throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+            }
+            guard operands[1] != 0 else {
                 throw RuntimeError.divisionByZero(location: SourceLocation.unknown)
             }
-            try storeResult(operand1 / operand2)
+            try storeResult(operands[0] / operands[1])
 
         case 0x18: // MOD - VAR form
-            guard operand2 != 0 else {
+            guard operands.count >= 2 else {
+                throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+            }
+            guard operands[1] != 0 else {
                 throw RuntimeError.divisionByZero(location: SourceLocation.unknown)
             }
-            try storeResult(operand1 % operand2)
+            try storeResult(operands[0] % operands[1])
 
         case 0x19: // CALL_2S - VAR form (v4+)
+            guard operands.count >= 2 else {
+                throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+            }
             if version.rawValue >= 4 {
-                let result = try callRoutine(UInt32(operand1), arguments: [operand2])
+                let result = try callRoutine(UInt32(operands[0]), arguments: [operands[1]])
                 try storeResult(result)
             } else {
                 throw RuntimeError.unsupportedOperation("CALL_2S in version \(version.rawValue)", location: SourceLocation.unknown)
             }
 
         case 0x1A: // CALL_2N - VAR form (v5+)
+            guard operands.count >= 2 else {
+                throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+            }
             if version.rawValue >= 5 {
-                _ = try callRoutine(UInt32(operand1), arguments: [operand2])
+                _ = try callRoutine(UInt32(operands[0]), arguments: [operands[1]])
             } else {
                 throw RuntimeError.unsupportedOperation("CALL_2N in version \(version.rawValue)", location: SourceLocation.unknown)
             }
@@ -605,14 +722,16 @@ extension ZMachine {
             guard operands.count >= 3 else {
                 throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
             }
-            let address = UInt32(operands[0]) + UInt32(operands[1]) * 2
+            // Emulate ZIP behavior: 16-bit address calculation with wraparound
+            let address = UInt32(UInt16(bitPattern: operands[0]) &+ UInt16(bitPattern: operands[1]) &* 2)
             try writeWord(UInt16(bitPattern: operands[2]), at: address)
 
         case 0x02: // STOREB
             guard operands.count >= 3 else {
                 throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
             }
-            let address = UInt32(operands[0]) + UInt32(operands[1])
+            // Emulate ZIP behavior: 16-bit address calculation with wraparound
+            let address = UInt32(UInt16(bitPattern: operands[0]) &+ UInt16(bitPattern: operands[1]))
             try writeByte(UInt8(operands[2] & 0xFF), at: address)
 
         case 0x03: // PUT_PROP
@@ -684,10 +803,10 @@ extension ZMachine {
                 guard !operands.isEmpty else {
                     throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
                 }
-                let value = try popStack()
+                let value = popStack()
                 try writeVariable(UInt8(operands[0] & 0xFF), value: value)
             } else {
-                let value = try popStack()
+                let value = popStack()
                 try storeResult(value)
             }
 
@@ -1056,7 +1175,7 @@ extension ZMachine {
                 // Pop multiple values from stack
                 let items = Int(operands[0])
                 for _ in 0..<items {
-                    _ = try popStack()
+                    _ = popStack()
                 }
             } else {
                 throw RuntimeError.unsupportedOperation("POP_STACK in version \(version.rawValue)", location: SourceLocation.unknown)

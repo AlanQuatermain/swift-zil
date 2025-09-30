@@ -23,26 +23,22 @@ public class ObjectTree {
     /// Load object tree from Z-Machine memory
     ///
     /// - Parameters:
-    ///   - data: Static memory data containing object table
+    ///   - data: Memory data containing object table (always in dynamic memory)
     ///   - version: Z-Machine version for structure layout
-    ///   - objectTableAddress: Byte offset of object table within the provided data (not absolute story file address)
-    ///   - staticMemoryBase: Absolute address of static memory base (for converting property table addresses)
+    ///   - objectTableAddress: Byte offset of object table within the provided data
+    ///   - staticMemoryBase: Absolute address of static memory base
     ///   - dictionaryAddress: Optional absolute dictionary address to avoid reading past object table
     /// - Throws: RuntimeError for corrupted object table
     public func load(from data: Data, version: ZMachineVersion, objectTableAddress: UInt32, staticMemoryBase: UInt32, dictionaryAddress: UInt32? = nil) throws {
-        print("           ObjectTree.load: data size=\(data.count), objectTableAddress=\(objectTableAddress)")
         self.version = version
         objects.removeAll()
         propertyDefaults.removeAll()
 
         var offset = Int(objectTableAddress)
-        print("           Starting offset: \(offset)")
 
         // Load property default table (31 words)
-        print("           Loading property defaults (need 62 bytes)...")
         for propertyNum in 1...31 {
             guard offset + 2 <= data.count else {
-                print("           ❌ Property defaults truncated at property \(propertyNum), offset \(offset), data.count \(data.count)")
                 throw RuntimeError.corruptedStoryFile("Property defaults table truncated", location: SourceLocation.unknown)
             }
 
@@ -50,12 +46,10 @@ public class ObjectTree {
             propertyDefaults[UInt8(propertyNum)] = value
             offset += 2
         }
-        print("           ✓ Property defaults loaded, new offset: \(offset)")
 
         // Load object entries
         var objectNumber: UInt16 = 1
         let objectSize = version.rawValue >= 4 ? 14 : 9
-        print("           Loading objects (object size: \(objectSize) bytes)...")
 
         // Calculate the maximum offset for object loading
         let maxObjectOffset: Int
@@ -63,17 +57,14 @@ public class ObjectTree {
             // If we know the dictionary address, don't read past it
             let dictOffset = Int(dictAddr - staticMemoryBase)
             maxObjectOffset = dictOffset
-            print("           Dictionary starts at offset \(dictOffset), will stop object loading before that")
         } else {
             // Otherwise, use the full static memory size
             maxObjectOffset = data.count
-            print("           No dictionary address provided, will scan to end of static memory")
         }
 
         // Check for end of objects more carefully - objects should immediately follow property defaults
         // If there's enough space for at least one object, check if it's all zeros (indicating end of object table)
         while offset + objectSize <= maxObjectOffset && offset + objectSize <= data.count {
-            print("           Checking object \(objectNumber) at offset \(offset) (need \(objectSize) bytes, have \(data.count - offset), max offset: \(maxObjectOffset))")
 
             // Check if this is the end of the object table by looking for all zeros in the object slot
             var allZeroBytes = true
@@ -85,7 +76,6 @@ public class ObjectTree {
             }
 
             if allZeroBytes {
-                print("           Found all-zero object slot, assuming end of object table at object \(objectNumber)")
                 break
             }
 
@@ -115,15 +105,18 @@ public class ObjectTree {
                 }
 
                 if !hasRelationships {
-                    print("           No attributes or relationships found, stopping at object \(objectNumber)")
-                    break
+                    // Check property table address too (last 2 bytes) - if it's non-zero, object is valid
+                    let propTableAddrOffset = offset + attributeSize + relationshipCount
+                    let propTableAddr = (UInt16(data[propTableAddrOffset]) << 8) | UInt16(data[propTableAddrOffset + 1])
+
+                    if propTableAddr == 0 {
+                        break
+                    }
                 }
             }
 
-            print("           Creating object \(objectNumber)...")
             let entry = try ObjectEntry(from: data, at: offset, objectNumber: objectNumber, version: version, staticMemoryBase: staticMemoryBase)
             objects[objectNumber] = entry
-            print("           ✓ Object \(objectNumber) created")
 
             offset += objectSize
             objectNumber += 1
@@ -133,12 +126,6 @@ public class ObjectTree {
                 break
             }
         }
-
-        if offset >= maxObjectOffset {
-            print("           Stopped object loading: reached dictionary boundary at offset \(maxObjectOffset)")
-        }
-
-        print("           ✓ Objects loaded: \(objects.count) objects")
     }
 
     /// Get an object by number
@@ -156,8 +143,20 @@ public class ObjectTree {
     ///   - attribute: Attribute number (0-31 for v3, 0-47 for v4+)
     /// - Returns: True if attribute is set
     public func getAttribute(_ objectNumber: UInt16, attribute: UInt8) -> Bool {
-        guard let object = objects[objectNumber] else { return false }
-        return object.hasAttribute(attribute)
+        guard let object = objects[objectNumber] else {
+            print("DEBUG: getAttribute(\(objectNumber), \(attribute)) - object not found")
+            return false
+        }
+
+        // Debug: Show object's raw attribute data
+        print("DEBUG: getAttribute(\(objectNumber), \(attribute))")
+        print("  Object \(objectNumber) raw attributes: 0x\(String(object.attributes, radix: 16, uppercase: true))")
+        print("  Z-Machine version: \(version.rawValue)")
+        print("  Max attributes for v\(version.rawValue): \(version.rawValue >= 4 ? 47 : 31)")
+
+        let result = object.hasAttribute(attribute)
+        print("  hasAttribute(\(attribute)) result: \(result)")
+        return result
     }
 
     /// Set object attribute (flag)
@@ -168,7 +167,16 @@ public class ObjectTree {
     ///   - value: True to set, false to clear
     /// - Throws: RuntimeError for invalid object or attribute numbers
     public func setAttribute(_ objectNumber: UInt16, attribute: UInt8, value: Bool) throws {
+        // Add detailed logging for object access attempts
+        if objectNumber > 200 {
+            print("WARNING: Attempting to set attribute on object \(objectNumber) (attribute=\(attribute), value=\(value))")
+            print("  Call stack trace would be helpful here")
+        }
+
         guard var object = objects[objectNumber] else {
+            print("ERROR: Invalid object access: object \(objectNumber) does not exist")
+            print("  Valid object range: 1-\(objects.keys.max() ?? 0)")
+            print("  Attempted operation: setAttribute(attribute=\(attribute), value=\(value))")
             throw RuntimeError.invalidObjectAccess(Int(objectNumber), location: SourceLocation.unknown)
         }
 
@@ -189,11 +197,16 @@ public class ObjectTree {
     ///   - property: Property number (1-31)
     /// - Returns: Property value or default if not found
     public func getProperty(_ objectNumber: UInt16, property: UInt8) -> UInt16 {
+        // print("DEBUG: getProperty called - object=\(objectNumber), property=\(property)")
+
         guard let object = objects[objectNumber] else {
+            // print("DEBUG: Object \(objectNumber) not found, returning default for property \(property): \(propertyDefaults[property] ?? 0)")
             return propertyDefaults[property] ?? 0
         }
 
-        return object.getProperty(property) ?? propertyDefaults[property] ?? 0
+        let result = object.getProperty(property) ?? propertyDefaults[property] ?? 0
+        // print("DEBUG: getProperty result - object=\(objectNumber), property=\(property), value=\(result) (0x\(String(result, radix: 16, uppercase: true)))")
+        return result
     }
 
     /// Set object property value
@@ -205,6 +218,11 @@ public class ObjectTree {
     /// - Throws: RuntimeError for invalid object or property numbers
     public func setProperty(_ objectNumber: UInt16, property: UInt8, value: UInt16) throws {
         guard var object = objects[objectNumber] else {
+            print("ERROR: Invalid object access: object \(objectNumber) does not exist")
+            print("  Valid object range: 1-\(objects.keys.max() ?? 0)")
+            print("  Attempted operation: setProperty(property=\(property), value=\(value))")
+            print("  ZIP COMPARISON: ZIP interpreter would access memory at calculated offset without bounds checking")
+            print("  This suggests the story file may have a bug or we missed objects during loading")
             throw RuntimeError.invalidObjectAccess(Int(objectNumber), location: SourceLocation.unknown)
         }
 
@@ -225,13 +243,24 @@ public class ObjectTree {
     ///   - newParent: New parent object (0 for no parent)
     /// - Throws: RuntimeError for invalid object references
     public func moveObject(_ objectNumber: UInt16, toParent newParent: UInt16) throws {
+        // Add detailed logging for object access attempts
+        if objectNumber > 200 || newParent > 200 {
+            print("WARNING: Attempting to move object \(objectNumber) to parent \(newParent)")
+        }
+
         guard var object = objects[objectNumber] else {
+            print("ERROR: Invalid object access: object \(objectNumber) does not exist")
+            print("  Valid object range: 1-\(objects.keys.max() ?? 0)")
+            print("  Attempted operation: moveObject(toParent=\(newParent))")
             throw RuntimeError.invalidObjectAccess(Int(objectNumber), location: SourceLocation.unknown)
         }
 
         // Validate new parent exists if not 0
         if newParent != 0 {
             guard objects[newParent] != nil else {
+                print("ERROR: Invalid parent object access: object \(newParent) does not exist")
+                print("  Valid object range: 1-\(objects.keys.max() ?? 0)")
+                print("  Attempted operation: moveObject(\(objectNumber), toParent=\(newParent))")
                 throw RuntimeError.invalidObjectAccess(Int(newParent), location: SourceLocation.unknown)
             }
         }
@@ -253,6 +282,15 @@ public class ObjectTree {
             objects[newParent] = parentObject
             objects[objectNumber] = object
         }
+    }
+
+    /// Get all properties for an object
+    ///
+    /// - Parameter objectNumber: Object number
+    /// - Returns: Dictionary of property number to property value
+    public func getAllProperties(_ objectNumber: UInt16) -> [UInt8: UInt16] {
+        guard let object = objects[objectNumber] else { return [:] }
+        return object.getAllProperties()
     }
 
     private func removeFromParent(_ objectNumber: UInt16) throws {
@@ -316,7 +354,6 @@ public struct ObjectEntry {
     private let version: ZMachineVersion
 
     public init(from data: Data, at offset: Int, objectNumber: UInt16, version: ZMachineVersion, staticMemoryBase: UInt32) throws {
-        print("               ObjectEntry.init: object \(objectNumber), offset \(offset), version \(version.rawValue)")
         self.objectNumber = objectNumber
         self.version = version
 
@@ -324,7 +361,6 @@ public struct ObjectEntry {
             throw RuntimeError.corruptedStoryFile("Object \(objectNumber) truncated", location: SourceLocation.unknown)
         }
 
-        print("               Loading attributes...")
         // Load attributes (4 bytes for v3, 6 bytes for v4+)
         if version.rawValue >= 4 {
             // 48-bit attributes for v4+
@@ -333,17 +369,13 @@ public struct ObjectEntry {
                 attributes = (attributes << 8) | UInt64(data[offset + i])
             }
 
-            // Load relationships (2 bytes each)
-            parent = (UInt16(data[offset + 6]) << 8) | UInt16(data[offset + 7])
-            sibling = (UInt16(data[offset + 8]) << 8) | UInt16(data[offset + 9])
-            child = (UInt16(data[offset + 10]) << 8) | UInt16(data[offset + 11])
-            let absolutePropertyTableAddress = (UInt16(data[offset + 12]) << 8) | UInt16(data[offset + 13])
-            // Convert absolute address to relative offset within static memory
-            if absolutePropertyTableAddress > 0 && absolutePropertyTableAddress >= UInt16(staticMemoryBase) {
-                propertyTableAddress = absolutePropertyTableAddress - UInt16(staticMemoryBase)
-            } else {
-                propertyTableAddress = 0
-            }
+            // Load relationships (2 bytes each) - Safe big-endian word reading
+            parent = UInt16(data[offset + 6]) << 8 | UInt16(data[offset + 7])
+            sibling = UInt16(data[offset + 8]) << 8 | UInt16(data[offset + 9])
+            child = UInt16(data[offset + 10]) << 8 | UInt16(data[offset + 11])
+            let propertyTableAddress = UInt16(data[offset + 12]) << 8 | UInt16(data[offset + 13])
+            // Property table addresses are already absolute (object table is in dynamic memory)
+            self.propertyTableAddress = propertyTableAddress
         } else {
             // 32-bit attributes for v3
             attributes = 0
@@ -355,19 +387,39 @@ public struct ObjectEntry {
             parent = UInt16(data[offset + 4])
             sibling = UInt16(data[offset + 5])
             child = UInt16(data[offset + 6])
-            let absolutePropertyTableAddress = (UInt16(data[offset + 7]) << 8) | UInt16(data[offset + 8])
-            // Convert absolute address to relative offset within static memory
-            if absolutePropertyTableAddress > 0 && absolutePropertyTableAddress >= UInt16(staticMemoryBase) {
-                propertyTableAddress = absolutePropertyTableAddress - UInt16(staticMemoryBase)
-            } else {
-                propertyTableAddress = 0
-            }
+            let propertyTableAddress = UInt16(data[offset + 7]) << 8 | UInt16(data[offset + 8])
+            // Property table addresses are already absolute (object table is in dynamic memory)
+            self.propertyTableAddress = propertyTableAddress
         }
-        print("               ✓ Object data loaded - parent:\(parent), sibling:\(sibling), child:\(child), propAddr:\(propertyTableAddress)")
 
-        print("               Loading properties...")
         if propertyTableAddress > 0 {
             try loadPropertiesFromTable(data: data)
+
+            // Debug: Check object short name during loading (commented out to reduce output)
+            /*
+            let tableAddress = Int(propertyTableAddress)
+            if tableAddress < data.count {
+                let textLength = data[tableAddress]
+                print("DEBUG: Object \(objectNumber) - text length: \(textLength) words, property table at offset 0x\(String(propertyTableAddress, radix: 16, uppercase: true))")
+
+                if textLength > 0 {
+                    print("DEBUG: Object \(objectNumber) HAS short description (\(textLength) words)")
+
+                    // Show raw bytes at property table address
+                    print("DEBUG: Raw bytes at property table (offset 0x\(String(propertyTableAddress, radix: 16))):")
+                    for i in 0..<min(12, data.count - tableAddress) {
+                        let byte = data[tableAddress + i]
+                        let charRep = (byte >= 32 && byte <= 126) ? " '\(Character(UnicodeScalar(byte) ?? UnicodeScalar(63)!))'" : ""
+                        print("DEBUG:   +\(i): 0x\(String(byte, radix: 16, uppercase: true)) (\(byte))\(charRep)")
+                    }
+
+                    // Address stored for later decoding by ZMachine
+                    print("DEBUG: Object \(objectNumber) short name at address 0x\(String(UInt32(tableAddress + 1), radix: 16, uppercase: true))")
+                } else {
+                    print("DEBUG: Object \(objectNumber) has NO short description (empty)")
+                }
+            }
+            */
         }
     }
 
@@ -381,14 +433,7 @@ public struct ObjectEntry {
     private mutating func loadPropertiesFromTable(data: Data) throws {
         let tableAddress = Int(propertyTableAddress)
 
-        // Debug output
-        print("DEBUG: Loading properties for object \(objectNumber)")
-        print("       Property table address: \(propertyTableAddress)")
-        print("       Static memory data size: \(data.count)")
-        print("       Table address as int: \(tableAddress)")
-
         guard tableAddress < data.count else {
-            print("ERROR: Property table address \(tableAddress) >= data size \(data.count)")
             throw RuntimeError.corruptedStoryFile("Property table address out of bounds", location: SourceLocation.unknown)
         }
 
@@ -418,41 +463,36 @@ public struct ObjectEntry {
             if version.rawValue >= 4 {
                 // Version 4+ property format
                 if (header & 0x80) != 0 {
-                    // Long format: 1sPP PPPP followed by LLLL LLLL
-                    // s = size bit (bit 6): 0=1-2 bytes, 1=3-64 bytes
-                    // PP PPPP = property number (bits 0-5)
-                    propertyNumber = header & 0x3F // Bottom 6 bits, not 7
-                    let sizeBit = (header & 0x40) != 0 // Bit 6
+                    // Long format: TWO header bytes
+                    // byte1: b0..b5 = property_number (1..63); b7 = 1
+                    // byte2: b0..b5 = length in bytes (1..64; treat 0 as 64); b7 = 1
+                    propertyNumber = header & 0x3F // Property number from first byte (bits 5-0)
 
                     guard offset < data.count else {
-                        throw RuntimeError.corruptedStoryFile("Property table truncated at size byte", location: SourceLocation.unknown)
+                        throw RuntimeError.corruptedStoryFile("Property table truncated at length byte", location: SourceLocation.unknown)
                     }
-                    let sizeField = data[offset]
+                    let lengthByte = data[offset] // Second byte is length
                     offset += 1
 
-                    if sizeBit {
-                        // Size bit set: 3-64 bytes (0 means 64)
-                        propertySize = sizeField == 0 ? 64 : Int(sizeField)
-                        guard propertySize >= 3 && propertySize <= 64 else {
-                            throw RuntimeError.corruptedStoryFile("Long format property size \(propertySize) out of valid range 3-64", location: SourceLocation.unknown)
-                        }
-                    } else {
-                        // Size bit clear: 1-2 bytes
-                        propertySize = sizeField == 0 ? 2 : Int(sizeField)
-                        guard propertySize >= 1 && propertySize <= 2 else {
-                            throw RuntimeError.corruptedStoryFile("Long format property size \(propertySize) out of valid range 1-2", location: SourceLocation.unknown)
-                        }
+                    let sizeField = lengthByte & 0x3F // Bottom 6 bits for size
+                    propertySize = sizeField == 0 ? 64 : Int(sizeField) // Size 0 means 64 bytes
+
+                    // Validate size for long format (1-64 bytes)
+                    guard propertySize >= 1 && propertySize <= 64 else {
+                        throw RuntimeError.corruptedStoryFile("Long format property size \(propertySize) out of valid range 1-64", location: SourceLocation.unknown)
                     }
                 } else {
-                    // Short format: 01LL PPPP
-                    // LL = length-1 (bits 4-5), PPPP = property number (bits 0-3)
-                    propertyNumber = header & 0x0F // Bottom 4 bits for property number
-                    let lengthField = (header >> 4) & 0x03 // Fix: shift by 4, not 5
-                    propertySize = Int(lengthField) + 1 // Length is stored as size-1
+                    // Short format: ONE header byte
+                    // b0..b5 = property_number (1..63)
+                    // b6 = length flag (0 ⇒ len=1, 1 ⇒ len=2)
+                    // b7 = 0
+                    propertyNumber = header & 0x3F // Bottom 6 bits for property number (1-63)
+                    let lengthFlag = (header & 0x40) != 0 // Bit 6 for length flag
+                    propertySize = lengthFlag ? 2 : 1 // 0 ⇒ len=1, 1 ⇒ len=2
 
-                    // Validate size for short format (max 4 bytes)
-                    guard propertySize >= 1 && propertySize <= 4 else {
-                        throw RuntimeError.corruptedStoryFile("Short format property size \\(propertySize) out of valid range 1-4", location: SourceLocation.unknown)
+                    // Validate size for short format (1-2 bytes)
+                    guard propertySize >= 1 && propertySize <= 2 else {
+                        throw RuntimeError.corruptedStoryFile("Short format property size \(propertySize) out of valid range 1-2", location: SourceLocation.unknown)
                     }
                 }
             } else {
@@ -498,18 +538,26 @@ public struct ObjectEntry {
             case 1:
                 propertyValue = UInt16(propertyData[0])
             case 2:
-                propertyValue = (UInt16(propertyData[0]) << 8) | UInt16(propertyData[1])
+                propertyValue = UInt16(propertyData[0]) << 8 | UInt16(propertyData[1])
             default:
                 // For larger properties, store the first two bytes as the value
                 // (Full property data handling would require more complex storage)
                 if propertySize >= 2 {
-                    propertyValue = (UInt16(propertyData[0]) << 8) | UInt16(propertyData[1])
+                    propertyValue = UInt16(propertyData[0]) << 8 | UInt16(propertyData[1])
                 } else {
                     propertyValue = 0
                 }
             }
 
             properties[propertyNumber] = propertyValue
+
+            // Debug logging for property loading (commented out)
+            /*
+            if objectNumber == 230 || objectNumber == 121 {
+                print("DEBUG: Loaded property \(propertyNumber) = \(propertyValue) (0x\(String(propertyValue, radix: 16, uppercase: true))) for object \(objectNumber)")
+            }
+            */
+
             offset += propertySize
         }
     }
@@ -523,6 +571,8 @@ public struct ObjectEntry {
         guard attribute <= maxAttribute else { return false }
 
         let bitPosition = UInt64(attribute)
+        // Ensure bit position is within UInt64 range (0-63)
+        guard bitPosition < 64 else { return false }
         return (attributes & (UInt64(1) << bitPosition)) != 0
     }
 
@@ -536,6 +586,9 @@ public struct ObjectEntry {
         guard attribute <= maxAttribute else { return }
 
         let bitPosition = UInt64(attribute)
+        // Ensure bit position is within UInt64 range (0-63)
+        guard bitPosition < 64 else { return }
+
         if value {
             attributes |= (UInt64(1) << bitPosition)
         } else {
@@ -549,6 +602,20 @@ public struct ObjectEntry {
     /// - Returns: Property value or nil if not found
     public func getProperty(_ property: UInt8) -> UInt16? {
         return properties[property]
+    }
+
+    /// Get all properties for this object
+    ///
+    /// - Returns: Dictionary of property number to property value
+    public func getAllProperties() -> [UInt8: UInt16] {
+        return properties
+    }
+
+    /// Get the property table address (absolute address)
+    ///
+    /// - Returns: Absolute property table address
+    public func getPropertyTableAddress() -> UInt16 {
+        return propertyTableAddress
     }
 
     /// Set property value

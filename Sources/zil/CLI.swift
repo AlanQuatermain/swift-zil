@@ -293,6 +293,14 @@ struct RunCommand: ParsableCommand {
     @Flag(help: "Enable VM debug mode")
     var debug = false
 
+    /// Enable instruction tracing to the specified file.
+    ///
+    /// All Z-Machine instruction execution will be logged to the trace file
+    /// with detailed information about opcodes, operands, and bytes consumed.
+    /// Format: <address>: <opcode> (<type>) <operands> [<bytes>]
+    @Option(help: "Enable instruction tracing to file")
+    var trace: String?
+
     /// Record gameplay transcript to the specified file.
     ///
     /// All player input and game output will be saved to the transcript file
@@ -368,8 +376,13 @@ struct RunCommand: ParsableCommand {
         let vm = ZMachine()
 
         do {
-            print("Loading story file...")
             try vm.loadStoryFile(from: storyFileURL)
+
+            // Enable instruction tracing if requested
+            if let traceFile = trace {
+                let traceURL = URL(fileURLWithPath: traceFile)
+                try vm.enableTracing(to: traceURL)
+            }
 
             // Set up I/O delegates for CLI interaction
             let inputDelegate = CLIInputDelegate()
@@ -520,31 +533,285 @@ struct AnalyzeCommand: ParsableCommand {
         // Initialize logging with appropriate verbosity level
         ZILLogger.bootstrap(logLevel: logLevel)
 
-        let target = storyFile ?? "[current project]"
-        print("Analyzing Z-Machine story file: \(target)")
+        // Determine story file to analyze
+        let targetFile: String
+        if let storyFile = storyFile {
+            targetFile = storyFile
+        } else {
+            // Look for story files in current directory
+            let fileManager = FileManager.default
+            let currentDir = fileManager.currentDirectoryPath
+            let storyFiles = try fileManager.contentsOfDirectory(atPath: currentDir)
+                .filter { $0.hasSuffix(".z3") || $0.hasSuffix(".z4") || $0.hasSuffix(".z5") ||
+                         $0.hasSuffix(".z6") || $0.hasSuffix(".z8") }
 
-        if all || header {
-            print("- Header information")
-        }
-        if all || objects {
-            print("- Object tree and properties")
-        }
-        if all || dictionary {
-            print("- Parser dictionary")
-        }
-        if all || strings {
-            print("- Strings and abbreviations")
-        }
-        if all || routines {
-            print("- Routine table and disassembly")
-        }
-        if all || memory {
-            print("- Memory layout and usage")
+            if storyFiles.isEmpty {
+                print("Error: No story files found in current directory")
+                print("Please specify a story file to analyze or run 'zil build' first")
+                throw ExitCode.validationFailure
+            } else if storyFiles.count == 1 {
+                targetFile = storyFiles.first!
+            } else {
+                // Use the most recent story file
+                targetFile = storyFiles.sorted().last!
+            }
         }
 
-        if !all && !header && !objects && !dictionary && !strings && !routines && !memory {
-            print("- All sections (default)")
+        print("Analyzing Z-Machine story file: \(targetFile)")
+        print()
+
+        // Determine which sections to show
+        let showAll = all || (!header && !objects && !dictionary && !strings && !routines && !memory)
+
+        // Load the story file
+        let storyURL = URL(fileURLWithPath: targetFile)
+        guard FileManager.default.fileExists(atPath: targetFile) else {
+            print("Error: Story file not found: \(targetFile)")
+            throw ExitCode.validationFailure
         }
+
+        let vm = ZMachine()
+        do {
+            try vm.loadStoryFile(from: storyURL)
+
+            // Header Analysis
+            if showAll || header {
+                print("=== HEADER INFORMATION ===")
+                analyzeHeader(vm)
+                print()
+            }
+
+            // Memory Layout Analysis
+            if showAll || memory {
+                print("=== MEMORY LAYOUT ===")
+                analyzeMemoryLayout(vm)
+                print()
+            }
+
+            // Objects Analysis
+            if showAll || objects {
+                print("=== OBJECT TREE ===")
+                analyzeObjects(vm)
+                print()
+            }
+
+            // Dictionary Analysis
+            if showAll || dictionary {
+                print("=== DICTIONARY ===")
+                analyzeDictionary(vm)
+                print()
+            }
+
+            // Strings Analysis
+            if showAll || strings {
+                print("=== STRINGS & ABBREVIATIONS ===")
+                analyzeStrings(vm)
+                print()
+            }
+
+            // Routines Analysis
+            if showAll || routines {
+                print("=== ROUTINES ===")
+                analyzeRoutines(vm)
+                print()
+            }
+
+        } catch {
+            print("Error loading story file: \(error)")
+            throw ExitCode.failure
+        }
+    }
+
+    // MARK: - Analysis Methods
+
+    private func analyzeHeader(_ vm: ZMachine) {
+        let header = vm.header
+        print("Version: \(header.version.rawValue)")
+        print("Serial Number: \(header.serialNumber)")
+        print("Checksum: 0x\(String(header.checksum, radix: 16, uppercase: true))")
+        print("Initial PC: 0x\(String(header.initialPC, radix: 16, uppercase: true))")
+        print("Dictionary Address: 0x\(String(header.dictionaryAddress, radix: 16, uppercase: true))")
+        print("Object Table Address: 0x\(String(header.objectTableAddress, radix: 16, uppercase: true))")
+        print("Global Table Address: 0x\(String(header.globalTableAddress, radix: 16, uppercase: true))")
+        print("Static Memory Base: 0x\(String(header.staticMemoryBase, radix: 16, uppercase: true))")
+        print("High Memory Base: 0x\(String(header.highMemoryBase, radix: 16, uppercase: true))")
+
+        if header.abbreviationTableAddress > 0 {
+            print("Abbreviation Table: 0x\(String(header.abbreviationTableAddress, radix: 16, uppercase: true))")
+        }
+
+        if header.version.rawValue >= 5 && header.unicodeTableAddress > 0 {
+            print("Unicode Table: 0x\(String(header.unicodeTableAddress, radix: 16, uppercase: true))")
+        }
+
+        if header.version.rawValue >= 6 {
+            print("Routine Offset: 0x\(String(header.routineOffset, radix: 16, uppercase: true))")
+            print("String Offset: 0x\(String(header.stringOffset, radix: 16, uppercase: true))")
+        }
+    }
+
+    private func analyzeMemoryLayout(_ vm: ZMachine) {
+        let header = vm.header
+        let dynamicSize = header.staticMemoryBase
+        let staticSize = header.highMemoryBase - header.staticMemoryBase
+        let totalSize = vm.storyData.count
+        let highSize = UInt32(totalSize) - header.highMemoryBase
+
+        print("Total Story File Size: \(totalSize) bytes")
+        print("Dynamic Memory: 0x0000 - 0x\(String(dynamicSize-1, radix: 16, uppercase: true)) (\(dynamicSize) bytes)")
+        print("Static Memory: 0x\(String(header.staticMemoryBase, radix: 16, uppercase: true)) - 0x\(String(header.highMemoryBase-1, radix: 16, uppercase: true)) (\(staticSize) bytes)")
+        print("High Memory: 0x\(String(header.highMemoryBase, radix: 16, uppercase: true)) - 0x\(String(UInt32(totalSize)-1, radix: 16, uppercase: true)) (\(highSize) bytes)")
+
+        let maxSize = ZMachine.getMaxMemorySize(for: header.version)
+        let usage = Double(totalSize) / Double(maxSize) * 100
+        print("Memory Usage: \(String(format: "%.1f", usage))% of \(maxSize) byte limit")
+    }
+
+    private func analyzeObjects(_ vm: ZMachine) {
+        let objectTree = vm.objectTree
+        var objectCount = 0
+        var objectNumber: UInt16 = 1
+        var maxObjectNumber: UInt16 = 0
+
+        // Count objects and find highest object number
+        while let _ = objectTree.getObject(objectNumber) {
+            objectCount += 1
+            maxObjectNumber = objectNumber
+            objectNumber += 1
+        }
+
+        print("Total Objects: \(objectCount)")
+        print("Object Range: 1-\(maxObjectNumber)")
+        print("Highest Valid Object: \(maxObjectNumber)")
+        print()
+
+        // Check for gaps in object numbering
+        var gapCount = 0
+        for i in 1...maxObjectNumber {
+            if objectTree.getObject(i) == nil {
+                gapCount += 1
+                if gapCount <= 5 { // Show first 5 gaps
+                    print("WARNING: Missing object \(i)")
+                }
+            }
+        }
+        if gapCount > 5 {
+            print("... and \(gapCount - 5) more missing objects")
+        }
+        if gapCount > 0 {
+            print()
+        }
+
+        // Show all objects with their decoded short names
+        print("All \(objectCount) objects:")
+        for i in 1...maxObjectNumber {
+            if let object = objectTree.getObject(i) {
+                // Get the object's short name from property table
+                do {
+                    let shortName = try vm.readObjectShortDescription(i)
+                    let displayName = shortName.isEmpty ? "(no name)" : "\"\(shortName)\""
+                    print("Object \(i) - \(displayName)")
+                    print("  parent=\(object.parent), sibling=\(object.sibling), child=\(object.child)")
+                } catch {
+                    print("Object \(i) - (decode error: \(error))")
+                    print("  parent=\(object.parent), sibling=\(object.sibling), child=\(object.child)")
+                }
+
+                // Show decoded properties
+                let properties = vm.analyzeObjectProperties(i)
+                for prop in properties {
+                    if let decodedString = prop.decodedString {
+                        print("    \(prop.propertyName) (\(prop.propertyNumber)): \(prop.rawValue) = \"\(decodedString)\" [\(prop.addressInfo)]")
+                    } else {
+                        print("    \(prop.propertyName) (\(prop.propertyNumber)): \(prop.rawValue) [\(prop.addressInfo)]")
+                    }
+                }
+            }
+        }
+
+    }
+
+    private func analyzeDictionary(_ vm: ZMachine) {
+        let dict = vm.dictionary
+        print("Dictionary Statistics:")
+        print("Entry Length: \(dict.entryLength) bytes")
+        print("Entry Count: \(dict.entryCount) entries")
+        print("Separator Characters: \(dict.separatorCount) separators")
+
+        // Show all dictionary words
+        print("\nAll \(dict.entryCount) dictionary words:")
+        for i in 0..<Int(dict.entryCount) {
+            if let entry = dict.getEntry(at: i) {
+                let decodedText = entry.decodeWord()
+                print("  \(i + 1): '\(decodedText)' (address: 0x\(String(entry.address, radix: 16, uppercase: true)))")
+            }
+        }
+    }
+
+    private func analyzeStrings(_ vm: ZMachine) {
+        print("=== ABBREVIATION TABLE ANALYSIS ===")
+
+        // Show header info first
+        if vm.header.abbreviationTableAddress > 0 {
+            print("Header Abbreviation Table Address: 0x\(String(vm.header.abbreviationTableAddress, radix: 16, uppercase: true))")
+        } else {
+            print("Header shows no abbreviation table (address = 0)")
+        }
+
+        print("Loaded Abbreviation Table Entries: \(vm.abbreviationTable.count)")
+
+        if vm.abbreviationTable.count > 0 {
+            // Use the detailed debugging methods from VMSupport
+            print("\n--- Abbreviation Table Validation ---")
+            let validationIssues = vm.validateAbbreviationTable()
+            for issue in validationIssues {
+                print(issue)
+            }
+
+            print("\n--- Detailed Abbreviation Analysis ---")
+            let abbrevInfo = vm.analyzeAbbreviationTable()
+
+            // Show all abbreviations with their content
+            for info in abbrevInfo {
+                let status = info.isValid ? "✅" : "❌"
+                let address = String(info.address, radix: 16, uppercase: true)
+                if let content = info.content {
+                    print("  \(status) \(info.tableType)[\(info.abbrevNumber)]: 0x\(address) = '\(content)'")
+                } else if let error = info.error {
+                    print("  \(status) \(info.tableType)[\(info.abbrevNumber)]: 0x\(address) ERROR: \(error)")
+                } else if !info.isValid {
+                    print("  \(status) \(info.tableType)[\(info.abbrevNumber)]: 0x\(address) (null address)")
+                }
+            }
+
+        } else {
+            print("❌ No abbreviation entries loaded!")
+            print("This suggests a problem with abbreviation table loading.")
+            print("Header address: 0x\(String(vm.header.abbreviationTableAddress, radix: 16, uppercase: true))")
+        }
+
+        if vm.version.rawValue >= 5 {
+            print("\n=== UNICODE TRANSLATION TABLE ===")
+            print("Unicode Translation Table: \(vm.unicodeTranslationTable.count) entries")
+            if !vm.unicodeTranslationTable.isEmpty {
+                print("All Unicode mappings:")
+                for (zscii, unicode) in vm.unicodeTranslationTable.sorted(by: { $0.key < $1.key }) {
+                    print("  ZSCII \(zscii) -> Unicode U+\(String(unicode, radix: 16, uppercase: true))")
+                }
+            }
+        }
+    }
+
+    private func analyzeRoutines(_ vm: ZMachine) {
+        print("Routine Analysis:")
+        print("Initial PC: 0x\(String(vm.programCounter, radix: 16, uppercase: true))")
+        print("Call Stack Depth: \(vm.callStack.count)")
+        print("Local Variables: \(vm.locals.count)")
+        print("Evaluation Stack Size: \(vm.evaluationStack.count)")
+
+        // Note: Full routine disassembly would require more complex analysis
+        print("\nNote: Full routine disassembly not implemented in this version")
+        print("Use a dedicated Z-Machine disassembler for detailed bytecode analysis")
     }
 }
 

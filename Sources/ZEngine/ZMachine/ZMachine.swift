@@ -28,7 +28,7 @@ public class ZMachine {
     // MARK: - Story File Information
 
     /// The loaded story file data
-    private var storyData: Data = Data()
+    public private(set) var storyData: Data = Data()
 
     /// Z-Machine version from story file header
     public private(set) var version: ZMachineVersion = .v3
@@ -39,13 +39,13 @@ public class ZMachine {
     // MARK: - Memory Management
 
     /// Dynamic memory region (read/write)
-    private var dynamicMemory: Data = Data()
+    internal var dynamicMemory: Data = Data()
 
     /// Static memory region (read-only)
-    private var staticMemory: Data = Data()
+    internal var staticMemory: Data = Data()
 
     /// High memory region (execute-only)
-    private var highMemory: Data = Data()
+    internal var highMemory: Data = Data()
 
     /// Memory region boundaries
     private var staticMemoryBase: UInt32 = 0
@@ -54,34 +54,34 @@ public class ZMachine {
     // MARK: - Execution State
 
     /// Program counter (instruction pointer)
-    internal var programCounter: UInt32 = 0
+    public internal(set) var programCounter: UInt32 = 0
 
     /// Call stack for routine calls
-    internal var callStack: [StackFrame] = []
+    public internal(set) var callStack: [StackFrame] = []
 
     /// Evaluation stack for computations
-    internal var evaluationStack: [Int16] = []
+    public internal(set) var evaluationStack: [Int16] = []
 
     /// Global variables (240 words)
     internal var globals: [UInt16] = Array(repeating: 0, count: 240)
 
     /// Local variables for current routine
-    internal var locals: [UInt16] = []
+    public internal(set) var locals: [UInt16] = []
 
     // MARK: - Game State
 
     /// Current object tree
-    internal var objectTree: ObjectTree = ObjectTree()
+    public internal(set) var objectTree: ObjectTree = ObjectTree()
 
     /// Dictionary for parser
-    internal var dictionary: Dictionary = Dictionary()
+    public internal(set) var dictionary: Dictionary = Dictionary()
 
     /// Abbreviation table for text decompression (96 entries: 32 each for A0, A1, A2)
-    internal var abbreviationTable: [UInt32] = []
+    public internal(set) var abbreviationTable: [UInt32] = []
 
     /// Unicode translation table for ZSCII to Unicode mapping (v5+)
     /// Maps ZSCII characters 155-223 to Unicode code points
-    internal var unicodeTranslationTable: [UInt32: UInt32] = [:]
+    public internal(set) var unicodeTranslationTable: [UInt32: UInt32] = [:]
 
     /// Text output buffer
     private var outputBuffer: String = ""
@@ -125,9 +125,113 @@ public class ZMachine {
     /// UNDO save state for RAM-based SAVE_UNDO/RESTORE_UNDO (v5+)
     private var undoState: QuetzalSaveState?
 
+    // MARK: - Instruction Tracing
+
+    /// Optional file handle for instruction tracing
+    private var traceFileHandle: FileHandle?
+
+    /// Enable instruction tracing to the specified file
+    ///
+    /// - Parameter url: URL of the trace file to write
+    /// - Throws: Error if file cannot be created or opened
+    public func enableTracing(to url: URL) throws {
+        // Create the file if it doesn't exist, or truncate it if it does exist
+        if FileManager.default.fileExists(atPath: url.path) {
+            // File exists - remove it to truncate contents
+            try FileManager.default.removeItem(at: url)
+        }
+        // Create a new empty file
+        FileManager.default.createFile(atPath: url.path, contents: nil, attributes: nil)
+
+        traceFileHandle = try FileHandle(forWritingTo: url)
+
+        // Write header to trace file
+        let header = "# Z-Machine Instruction Trace\n# Format: <address>: <opcode> (<type>) <operands> [<bytes consumed>]\n\n"
+        traceFileHandle?.write(header.data(using: .utf8) ?? Data())
+    }
+
+    /// Disable instruction tracing and close the trace file
+    public func disableTracing() {
+        traceFileHandle?.closeFile()
+        traceFileHandle = nil
+    }
+
+    /// Current instruction being traced
+    private var currentInstruction: InstructionTrace?
+    /// PC after all operands have been decoded but before execution
+    internal var postDecodePC: UInt32 = 0
+
+    /// Instruction trace data structure
+    private struct InstructionTrace {
+        let startAddress: UInt32
+        let opcode: UInt8
+        var type: String = ""
+        var operands: [Int16] = []
+    }
+
+    /// Begin tracing a new instruction
+    internal func beginTrace(address: UInt32, opcode: UInt8) {
+        guard traceFileHandle != nil else {
+            return
+        }
+
+        currentInstruction = InstructionTrace(
+            startAddress: address,
+            opcode: opcode
+        )
+    }
+
+    /// Add an operand to the current trace
+    internal func traceOperand(_ operand: Int16) {
+        guard traceFileHandle != nil else { return }
+        currentInstruction?.operands.append(operand)
+    }
+
+    /// Set the instruction type for the current trace
+    internal func traceType(_ type: String) {
+        guard traceFileHandle != nil else { return }
+        currentInstruction?.type = type
+    }
+
+    /// Write out the current instruction trace and clear it
+    private func flushTrace(nextPC: UInt32) {
+        guard let traceHandle = traceFileHandle,
+              let instruction = currentInstruction else { return }
+
+        // Read the actual bytes consumed by this instruction
+        var bytesConsumed: [UInt8] = []
+        for addr in instruction.startAddress..<nextPC {
+            do {
+                bytesConsumed.append(try readByte(at: addr))
+            } catch {
+                // If we can't read a byte, stop collecting
+                break
+            }
+        }
+
+        let operandStr = instruction.operands.map { String($0) }.joined(separator: ", ")
+        let bytesStr = bytesConsumed.map { String(format: "0x%02X", $0) }.joined(separator: " ")
+
+        let traceLine = "\(instruction.startAddress): 0x\(String(instruction.opcode, radix: 16, uppercase: true)) (\(instruction.type)) [\(operandStr)] [\(bytesStr)]\n"
+
+//                              instruction.startAddress,
+//                              instruction.opcode,
+//                              instruction.type,
+//                              operandStr,
+//                              bytesStr)
+
+        traceHandle.write(traceLine.data(using: .utf8) ?? Data())
+        traceHandle.synchronizeFile() // Flush I/O
+
+        currentInstruction = nil
+    }
+
     // MARK: - Initialization
 
     public init() {
+        // Initialize globals array to zeros (will be loaded from story file later)
+        globals = Array(repeating: 0, count: 240)
+
         // Initialize VM components
         setupInitialState()
     }
@@ -136,8 +240,10 @@ public class ZMachine {
         callStack.removeAll()
         evaluationStack.removeAll()
         locals.removeAll()
-        globals = Array(repeating: 0, count: 240)
-        abbreviationTable.removeAll()
+        // Don't clear globals here - they are loaded by loadGameData() and should persist
+        // globals = Array(repeating: 0, count: 240)  // REMOVED - this was overwriting loaded globals
+        // DON'T clear abbreviationTable here - it's loaded by loadGameData() and should persist!
+        // abbreviationTable.removeAll()  // REMOVED - this was clearing the loaded abbreviation table
         unicodeTranslationTable.removeAll()
         programCounter = 0
         isRunning = false
@@ -181,8 +287,8 @@ public class ZMachine {
         // Reset VM state but preserve important header values
         setupInitialState()
 
-        // Set initial PC from header AFTER memory setup - the PC may need unpacking
-        programCounter = unpackRoutineAddress(header.initialPC)
+        // Set initial PC from header AFTER memory setup, respecting version-specific packing rules
+        programCounter = resolveInitialProgramCounter()
 
         // Validate that the initial PC is within executable memory
         try validateProgramCounter()
@@ -195,6 +301,17 @@ public class ZMachine {
         guard programCounter >= highMemoryBase && programCounter < maxAddress else {
             throw RuntimeError.corruptedStoryFile("Initial PC (\(programCounter)) not in executable memory range (\(highMemoryBase)-\(maxAddress))", location: SourceLocation.unknown)
         }
+    }
+
+    /// Resolve the initial program counter stored in the header to an executable byte address.
+    private func resolveInitialProgramCounter() -> UInt32 {
+        if version.rawValue <= 3 {
+            // Versions 1-3 store the entry address directly in bytes
+            return header.initialPC
+        }
+
+        // Versions 4+ store packed routine addresses that must be unpacked
+        return unpackRoutineAddress(header.initialPC)
     }
 
     private func parseHeader() throws {
@@ -298,7 +415,7 @@ public class ZMachine {
     }
 
     /// Get maximum memory size for Z-Machine version
-    static func getMaxMemorySize(for version: ZMachineVersion) -> UInt32 {
+    public static func getMaxMemorySize(for version: ZMachineVersion) -> UInt32 {
         switch version {
         case .v3:
             return 131072      // 128KB
@@ -345,7 +462,7 @@ public class ZMachine {
             throw RuntimeError.corruptedStoryFile("Dictionary offset \(dictionaryOffset) exceeds static memory size \(staticMemory.count)", location: SourceLocation.unknown)
         }
 
-        try dictionary.load(from: staticMemory, dictionaryAddress: UInt32(dictionaryOffset))
+        try dictionary.load(from: staticMemory, dictionaryAddress: UInt32(dictionaryOffset), absoluteDictionaryAddress: header.dictionaryAddress, version: version)
 
         // Load abbreviation table from static memory
         try loadAbbreviationTable()
@@ -354,6 +471,46 @@ public class ZMachine {
         if version.rawValue >= 5 {
             try loadUnicodeTranslationTable()
         }
+
+        // Debug: Print decoded object short names now that all tables are loaded
+        try printObjectShortNames()
+    }
+
+    /// Debug method to print decoded object short names
+    private func printObjectShortNames() throws {
+        // Commented out to reduce debug output
+        /*
+        print("DEBUG: === Decoding Object Short Names ===")
+
+        // Check first 20 objects to see their short descriptions
+        for objectNum in 1...20 {
+            if let object = objectTree.getObject(UInt16(objectNum)) {
+                let propertyTableOffset = object.getPropertyTableAddress()
+
+                if propertyTableOffset > 0 {
+                    // Calculate absolute address
+                    let absoluteAddress = header.staticMemoryBase + UInt32(propertyTableOffset)
+
+                    // Read text length
+                    let textLength = try readByte(at: absoluteAddress)
+
+                    if textLength > 0 {
+                        // Read and decode the short description
+                        let textAddress = absoluteAddress + 1
+                        do {
+                            let result = try readZString(at: textAddress)
+                            print("DEBUG: Object \(objectNum) = \"\(result.string)\"")
+                        } catch {
+                            print("DEBUG: Object \(objectNum) - failed to decode: \(error)")
+                        }
+                    } else {
+                        print("DEBUG: Object \(objectNum) = (no short name)")
+                    }
+                }
+            }
+        }
+        print("DEBUG: === End Object Short Names ===")
+        */
     }
 
     private func loadAbbreviationTable() throws {
@@ -545,15 +702,27 @@ public class ZMachine {
             throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
         }
 
+        let startPC = programCounter
         let opcode = try readByte(at: programCounter)
         programCounter += 1
 
+        // Begin tracing this instruction
+        beginTrace(address: startPC, opcode: opcode)
+
+        // Set post-decode PC BEFORE instruction execution (after operands will be consumed)
+        postDecodePC = programCounter
+
+        // Decode and execute the instruction
         try decodeAndExecuteInstruction(opcode)
+
+        // Use the post-decode PC for tracing
+        flushTrace(nextPC: postDecodePC)
     }
 
     private func decodeAndExecuteInstruction(_ opcode: UInt8) throws {
         // Check for extended form first (V4+)
         if opcode == 0xBE && version.rawValue >= 4 {
+            traceType("EXT")
             let extOpcode = try readByte(at: programCounter)
             programCounter += 1
             try executeExtendedInstruction(extOpcode)
@@ -568,23 +737,28 @@ public class ZMachine {
             let operandTypeBits = opcode & 0x30  // Extract bits 5-4
             if operandTypeBits == 0x30 {
                 // Operand type = 11 (omitted) -> 0OP
+                traceType("0OP")
                 try execute0OPInstruction(opcode)
             } else {
                 // Operand type != 11 -> 1OP
+                traceType("1OP")
                 try execute1OPInstruction(opcode)
             }
 
         case 0xC0:  // 11xxxxxx - Variable form
             let varTypeBit = opcode & 0x20  // Extract bit 5
             if varTypeBit == 0 {
-                // Bit 5 = 0 -> True VAR opcodes (like PRINT_CHAR)
-                try executeVarInstruction(opcode)
-            } else {
-                // Bit 5 = 1 -> VAR form encoding of 2OP instructions
+                // Bit 5 = 0 -> 2OP instructions encoded in VAR space (C0-DF)
+                traceType("2OP_VAR")
                 try execute2OPVarInstruction(opcode)
+            } else {
+                // Bit 5 = 1 -> True VAR opcodes like CALL (E0-FF)
+                traceType("VAR")
+                try executeVarInstruction(opcode)
             }
 
         default:  // 00xxxxxx or 01xxxxxx - Long form (2OP)
+            traceType("2OP")
             try execute2OPInstruction(opcode)
         }
     }
@@ -708,11 +882,14 @@ public class ZMachine {
 
     /// Pop a value from the evaluation stack
     ///
-    /// - Returns: Popped value
-    /// - Throws: RuntimeError for stack underflow
-    public func popStack() throws -> Int16 {
+    /// According to the Z-Machine specification, reading from an empty stack
+    /// should return 0, not generate an error. This allows games to check
+    /// the stack state without explicit stack management.
+    ///
+    /// - Returns: Popped value (0 if stack is empty)
+    public func popStack() -> Int16 {
         guard !evaluationStack.isEmpty else {
-            throw RuntimeError.stackUnderflow(location: SourceLocation.unknown)
+            return 0  // Z-Machine spec: empty stack reads return 0
         }
         return evaluationStack.removeLast()
     }
@@ -831,7 +1008,9 @@ public class ZMachine {
         }
 
         // Read and validate text buffer format - byte 0 contains max length
-        let maxTextLength = try readByte(at: textBuffer)
+        let maxTextLengthRaw = try readByte(at: textBuffer)
+        // V1-V4: stored as (max-1), V5+: actual max
+        let maxTextLength = version.rawValue <= 4 ? Int(maxTextLengthRaw) + 1 : Int(maxTextLengthRaw)
         guard maxTextLength > 0 else {
             throw RuntimeError.invalidMemoryAccess(Int(textBuffer), location: SourceLocation.unknown)
         }
@@ -998,6 +1177,14 @@ public class ZMachine {
         // Convert ZSCII to string for processing
         let inputString = convertFromZSCII(textData)
 
+        // DEBUG: Print text buffer contents
+        print("DEBUG: Text buffer analysis:")
+        print("  - Text buffer address: 0x\(String(textBuffer, radix: 16, uppercase: true))")
+        print("  - Text start address: 0x\(String(textStartAddress, radix: 16, uppercase: true))")
+        print("  - Actual text length: \(textLength)")
+        print("  - Text data: \(textData.map { String(format: "%02X", $0) }.joined(separator: " "))")
+        print("  - Decoded text: '\(inputString)'")
+
         // Parse words using Z-Machine word separation rules
         let words = parseWordsFromInput(inputString)
 
@@ -1008,12 +1195,18 @@ public class ZMachine {
         // Store word count
         try writeByte(UInt8(actualWordCount), at: parseBuffer + 1)
 
+        // DEBUG: Print parse buffer setup
+        print("DEBUG: Parse buffer analysis:")
+        print("  - Max words: \(maxWords)")
+        print("  - Actual word count: \(actualWordCount)")
+        print("  - Words found: \(words.map { "\'\($0.text)\' at pos \($0.position) len \($0.length)" })")
+
         // Process each word
         for (index, wordInfo) in words.prefix(actualWordCount).enumerated() {
             let entryAddress = parseBuffer + 2 + UInt32(index * 4)
 
             // Look up word in dictionary (unless flags prevent it)
-            var dictionaryAddress: UInt16 = 0
+            var dictionaryAddress: UInt32 = 0
             if (flags & 0x01) == 0 {  // Bit 0: Skip dictionary lookup
                 dictionaryAddress = lookupWordInDictionary(wordInfo.text, dictionaryAddr: dictionary)
 
@@ -1025,9 +1218,35 @@ public class ZMachine {
             // Note: Bits 2-7 are reserved and should be ignored
 
             // Store word entry: dictionary_addr(2), length(1), position(1)
-            try writeWord(dictionaryAddress, at: entryAddress)
+            try writeWord(UInt16(dictionaryAddress), at: entryAddress)
             try writeByte(UInt8(wordInfo.length), at: entryAddress + 2)
-            try writeByte(UInt8(wordInfo.position + 1), at: entryAddress + 3) // 1-based position
+            // Position should be 1-based from start of text area in buffer
+            // V1-V4: text starts at buffer[1], V5+: text starts at buffer[2]
+            let positionInBuffer = wordInfo.position + 1  // Convert to 1-based
+            try writeByte(UInt8(positionInBuffer), at: entryAddress + 3)
+
+            // DEBUG: Print parse buffer entry
+            print("DEBUG: Parse entry \(index): '\(wordInfo.text)' -> addr=0x\(String(dictionaryAddress, radix: 16, uppercase: true)), len=\(wordInfo.length), pos=\(positionInBuffer)")
+        }
+
+        // DEBUG: Dump parse buffer contents to match PEZ format
+        do {
+            print("DEBUG: Parse buffer contents:")
+            print("  - Parse buffer address: 0x\(String(parseBuffer, radix: 16, uppercase: true))")
+            let maxWordsFromBuffer = try readByte(at: parseBuffer)
+            let actualWordsFromBuffer = try readByte(at: parseBuffer + 1)
+            print("  - Max words: \(maxWordsFromBuffer)")
+            print("  - Actual word count: \(actualWordsFromBuffer)")
+            print("  - Parse entries:")
+            for i in 0..<Int(actualWordsFromBuffer) {
+                let entryAddr = parseBuffer + 2 + UInt32(i * 4)
+                let dictAddr = try readWord(at: entryAddr)
+                let len = try readByte(at: entryAddr + 2)
+                let pos = try readByte(at: entryAddr + 3)
+                print("    Entry \(i): dict_addr=0x\(String(dictAddr, radix: 16, uppercase: true)), len=\(len), pos=\(pos)")
+            }
+        } catch {
+            print("DEBUG: Failed to read parse buffer: \(error)")
         }
     }
 
@@ -1083,7 +1302,7 @@ public class ZMachine {
     ///   - word: Word to look up (already lowercased)
     ///   - dictionaryAddr: Dictionary address (0 = use default)
     /// - Returns: Dictionary entry address (0 if not found)
-    private func lookupWordInDictionary(_ word: String, dictionaryAddr: UInt32) -> UInt16 {
+    private func lookupWordInDictionary(_ word: String, dictionaryAddr: UInt32) -> UInt32 {
         // Use default dictionary if none specified
         let dict = dictionaryAddr == 0 ? dictionary : loadAlternateDictionary(at: dictionaryAddr)
 
@@ -1094,16 +1313,18 @@ public class ZMachine {
         let maxWordLength = version.rawValue >= 4 ? 9 : 6
         let truncatedWord = String(word.prefix(maxWordLength))
 
+        // DEBUG: Add temporary debug output
+        print("DEBUG: Looking up word '\(word)' -> truncated: '\(truncatedWord)'")
+
         // Look up truncated word in dictionary
         if let entry = dict.lookup(truncatedWord) {
-            // Calculate absolute dictionary entry address
-            // entry.address is offset within dictionary data
-            let baseDictionaryAddress = dictionaryAddr == 0 ? header.dictionaryAddress : dictionaryAddr
-            let absoluteAddress = baseDictionaryAddress + UInt32(entry.address)
-            return UInt16(absoluteAddress & 0xFFFF) // Truncate to 16 bits
+            // Dictionary entry already contains absolute address
+            print("DEBUG: Found word '\(truncatedWord)' at address 0x\(String(entry.address, radix: 16, uppercase: true))")
+            return entry.address
+        } else {
+            print("DEBUG: Word '\(truncatedWord)' NOT found in dictionary")
+            return 0 // Word not found
         }
-
-        return 0 // Word not found
     }
 
     /// Load alternate dictionary (simplified implementation)
@@ -1180,7 +1401,7 @@ public class ZMachine {
     public func restart() throws {
         // Reset VM state
         setupInitialState()
-        programCounter = unpackRoutineAddress(header.initialPC)
+        programCounter = resolveInitialProgramCounter()
 
         // Reset dynamic memory to initial state from story file
         let dynamicSize = Int(staticMemoryBase)
@@ -1212,7 +1433,7 @@ public class ZMachine {
 
         // Reload dictionary (though it shouldn't change)
         let dictionaryOffset = header.dictionaryAddress - header.staticMemoryBase
-        try dictionary.load(from: staticMemory, dictionaryAddress: UInt32(dictionaryOffset))
+        try dictionary.load(from: staticMemory, dictionaryAddress: UInt32(dictionaryOffset), absoluteDictionaryAddress: header.dictionaryAddress, version: version)
 
         // Reload abbreviation table
         try loadAbbreviationTable()
@@ -1698,7 +1919,7 @@ public struct StoryHeader {
         // High memory base (ENDLOD) - bytes 4-5
         highMemoryBase = (UInt32(data[4]) << 8) | UInt32(data[5])
 
-        // Initial PC (START) - bytes 6-7, needs unpacking based on version
+        // Initial PC (START) - bytes 6-7 (byte address in v1-3, packed routine address in v4+)
         let initialPCRaw = (UInt32(data[6]) << 8) | UInt32(data[7])
         initialPC = initialPCRaw
 
@@ -1792,7 +2013,7 @@ public struct StoryHeader {
 }
 
 /// Stack frame for routine calls
-internal struct StackFrame {
+public struct StackFrame {
     let returnPC: UInt32
     let localCount: Int
     let locals: [UInt16]

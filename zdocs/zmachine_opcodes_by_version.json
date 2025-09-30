@@ -1,0 +1,2190 @@
+{
+  "metadata": {
+    "generated_on": "2025-09-28T22:22:38.786383Z",
+    "notes": "Reserved/unused slots omitted. For some opcodes the mnemonic changes across versions (e.g., 1OP:F not/call_1n; 0OP:9 pop/catch; VAR:00 call/call_vs; VAR:04 sread/aread).",
+    "sources": [
+      "Z-Machine Standards Document 1.1, \u00a714 and \u00a715 (opcode tables and dictionary)",
+      "Cross-checked against 'Summary of Z\u2011Machine Version Differences' by Hans Prestidge"
+    ]
+  },
+  "by_version": {
+    "v1": {
+      "2OP": {
+        "01": "je",
+        "02": "jl",
+        "03": "jg",
+        "04": "dec_chk",
+        "05": "inc_chk",
+        "06": "jin",
+        "07": "test",
+        "08": "or",
+        "09": "and",
+        "0A": "test_attr",
+        "0B": "set_attr",
+        "0C": "clear_attr",
+        "0D": "store",
+        "0E": "insert_obj",
+        "0F": "loadw",
+        "10": "loadb",
+        "11": "get_prop",
+        "12": "get_prop_addr",
+        "13": "get_next_prop",
+        "14": "add",
+        "15": "sub",
+        "16": "mul",
+        "17": "div",
+        "18": "mod"
+      },
+      "1OP": {
+        "00": "jz",
+        "01": "get_sibling",
+        "02": "get_child",
+        "03": "get_parent",
+        "04": "get_prop_len",
+        "05": "inc",
+        "06": "dec",
+        "07": "print_addr",
+        "09": "remove_obj",
+        "0A": "print_obj",
+        "0B": "ret",
+        "0C": "jump",
+        "0D": "print_paddr",
+        "0E": "load",
+        "0F": "not"
+      },
+      "0OP": {
+        "00": "rtrue",
+        "01": "rfalse",
+        "02": "print",
+        "03": "print_ret",
+        "04": "nop",
+        "05": "save",
+        "06": "restore",
+        "07": "restart",
+        "08": "ret_popped",
+        "09": "pop",
+        "0A": "quit",
+        "0B": "new_line"
+      },
+      "VAR": {
+        "00": "call",
+        "01": "storew",
+        "02": "storeb",
+        "03": "put_prop",
+        "04": "sread",
+        "05": "print_char",
+        "06": "print_num",
+        "07": "random",
+        "08": "push",
+        "09": "pull"
+      },
+      "EXT": {}
+    },
+    "v2": {
+      "2OP": {
+        "01": "je",
+        "02": "jl",
+        "03": "jg",
+        "04": "dec_chk",
+        "05": "inc_chk",
+        "06": "jin",
+        "07": "test",
+        "08": "or",
+        "09": "and",
+        "0A": "test_attr",
+        "0B": "set_attr",
+        "0C": "clear_attr",
+        "0D": "store",
+        "0E": "insert_obj",
+        "0F": "loadw",
+        "10": "loadb",
+        "11": "get_prop",
+        "12": "get_prop_addr",
+        "13": "get_next_prop",
+        "14": "add",
+        "15": "sub",
+        "16": "mul",
+        "17": "div",
+        "18": "mod"
+      },
+      "1OP": {
+        "00": "jz",
+        "01": "get_sibling",
+        "02": "get_child",
+        "03": "get_parent",
+        "04": "get_prop_len",
+        "05": "inc",
+        "06": "dec",
+        "07": "print_addr",
+        "09": "remove_obj",
+        "0A": "print_obj",
+        "0B": "ret",
+        "0C": "jump",
+        "0D": "print_paddr",
+        "0E": "load",
+        "0F": "not"
+      },
+      "0OP": {
+        "00": "rtrue",
+        "01": "rfalse",
+        "02": "print",
+        "03": "print_ret",
+        "05": "save",
+        "06": "restore",
+        "07": "restart",
+        "08": "ret_popped",
+        "09": "pop",
+        "0A": "quit",
+        "0B": "new_line"
+      },
+      "VAR": {
+        "00": "call",
+        "01": "storew",
+        "02": "storeb",
+        "03": "put_prop",
+        "04": "sread",
+        "05": "print_char",
+        "06": "print_num",
+        "07": "random",
+        "08": "push",
+        "09": "pull"
+      },
+      "EXT": {}
+    },
+    "v3": {
+      "2OP": {
+        "01": "je",
+        "02": "jl",
+        "03": "jg",
+        "04": "dec_chk",
+        "05": "inc_chk",
+        "06": "jin",
+        "07": "test",
+        "08": "or",
+        "09": "and",
+        "0A": "test_attr",
+        "0B": "set_attr",
+        "0C": "clear_attr",
+        "0D": "store",
+        "0E": "insert_obj",
+        "0F": "loadw",
+        "10": "loadb",
+        "11": "get_prop",
+        "12": "get_prop_addr",
+        "13": "get_next_prop",
+        "14": "add",
+        "15": "sub",
+        "16": "mul",
+        "17": "div",
+        "18": "mod"
+      },
+      "1OP": {
+        "00": "jz",
+        "01": "get_sibling",
+        "02": "get_child",
+        "03": "get_parent",
+        "04": "get_prop_len",
+        "05": "inc",
+        "06": "dec",
+        "07": "print_addr",
+        "09": "remove_obj",
+        "0A": "print_obj",
+        "0B": "ret",
+        "0C": "jump",
+        "0D": "print_paddr",
+        "0E": "load",
+        "0F": "not"
+      },
+      "0OP": {
+        "00": "rtrue",
+        "01": "rfalse",
+        "02": "print",
+        "03": "print_ret",
+        "05": "save",
+        "06": "restore",
+        "07": "restart",
+        "08": "ret_popped",
+        "09": "pop",
+        "0A": "quit",
+        "0B": "new_line",
+        "0C": "show_status",
+        "0D": "verify"
+      },
+      "VAR": {
+        "00": "call",
+        "01": "storew",
+        "02": "storeb",
+        "03": "put_prop",
+        "04": "sread",
+        "05": "print_char",
+        "06": "print_num",
+        "07": "random",
+        "08": "push",
+        "09": "pull",
+        "0A": "split_window",
+        "0B": "set_window",
+        "13": "output_stream",
+        "14": "input_stream",
+        "15": "sound_effect"
+      },
+      "EXT": {}
+    },
+    "v4": {
+      "2OP": {
+        "01": "je",
+        "02": "jl",
+        "03": "jg",
+        "04": "dec_chk",
+        "05": "inc_chk",
+        "06": "jin",
+        "07": "test",
+        "08": "or",
+        "09": "and",
+        "0A": "test_attr",
+        "0B": "set_attr",
+        "0C": "clear_attr",
+        "0D": "store",
+        "0E": "insert_obj",
+        "0F": "loadw",
+        "10": "loadb",
+        "11": "get_prop",
+        "12": "get_prop_addr",
+        "13": "get_next_prop",
+        "14": "add",
+        "15": "sub",
+        "16": "mul",
+        "17": "div",
+        "18": "mod",
+        "19": "call_2s"
+      },
+      "1OP": {
+        "00": "jz",
+        "01": "get_sibling",
+        "02": "get_child",
+        "03": "get_parent",
+        "04": "get_prop_len",
+        "05": "inc",
+        "06": "dec",
+        "07": "print_addr",
+        "08": "call_1s",
+        "09": "remove_obj",
+        "0A": "print_obj",
+        "0B": "ret",
+        "0C": "jump",
+        "0D": "print_paddr",
+        "0E": "load",
+        "0F": "not"
+      },
+      "0OP": {
+        "00": "rtrue",
+        "01": "rfalse",
+        "02": "print",
+        "03": "print_ret",
+        "05": "save",
+        "06": "restore",
+        "07": "restart",
+        "08": "ret_popped",
+        "09": "pop",
+        "0A": "quit",
+        "0B": "new_line"
+      },
+      "VAR": {
+        "00": "call_vs",
+        "01": "storew",
+        "02": "storeb",
+        "03": "put_prop",
+        "04": "sread",
+        "05": "print_char",
+        "06": "print_num",
+        "07": "random",
+        "08": "push",
+        "09": "pull",
+        "0C": "call_vs2",
+        "0D": "erase_window",
+        "0E": "erase_line",
+        "0F": "set_cursor",
+        "10": "get_cursor",
+        "11": "set_text_style",
+        "12": "buffer_mode",
+        "13": "output_stream",
+        "14": "input_stream",
+        "16": "read_char",
+        "17": "scan_table"
+      },
+      "EXT": {}
+    },
+    "v5": {
+      "2OP": {
+        "01": "je",
+        "02": "jl",
+        "03": "jg",
+        "04": "dec_chk",
+        "05": "inc_chk",
+        "06": "jin",
+        "07": "test",
+        "08": "or",
+        "09": "and",
+        "0A": "test_attr",
+        "0B": "set_attr",
+        "0C": "clear_attr",
+        "0D": "store",
+        "0E": "insert_obj",
+        "0F": "loadw",
+        "10": "loadb",
+        "11": "get_prop",
+        "12": "get_prop_addr",
+        "13": "get_next_prop",
+        "14": "add",
+        "15": "sub",
+        "16": "mul",
+        "17": "div",
+        "18": "mod",
+        "19": "call_2s",
+        "1A": "call_2n",
+        "1B": "set_colour",
+        "1C": "throw"
+      },
+      "1OP": {
+        "00": "jz",
+        "01": "get_sibling",
+        "02": "get_child",
+        "03": "get_parent",
+        "04": "get_prop_len",
+        "05": "inc",
+        "06": "dec",
+        "07": "print_addr",
+        "08": "call_1s",
+        "09": "remove_obj",
+        "0A": "print_obj",
+        "0B": "ret",
+        "0C": "jump",
+        "0D": "print_paddr",
+        "0E": "load",
+        "0F": "call_1n"
+      },
+      "0OP": {
+        "00": "rtrue",
+        "01": "rfalse",
+        "02": "print",
+        "03": "print_ret",
+        "07": "restart",
+        "08": "ret_popped",
+        "09": "catch",
+        "0A": "quit",
+        "0B": "new_line",
+        "0E": "extended",
+        "0F": "piracy"
+      },
+      "VAR": {
+        "00": "call_vs",
+        "01": "storew",
+        "02": "storeb",
+        "03": "put_prop",
+        "04": "aread",
+        "05": "print_char",
+        "06": "print_num",
+        "07": "random",
+        "08": "push",
+        "09": "pull",
+        "0C": "call_vs2",
+        "0D": "erase_window",
+        "0E": "erase_line",
+        "0F": "set_cursor",
+        "10": "get_cursor",
+        "11": "set_text_style",
+        "12": "buffer_mode",
+        "13": "output_stream",
+        "14": "input_stream",
+        "15": "sound_effect",
+        "16": "read_char",
+        "17": "scan_table",
+        "18": "not",
+        "19": "call_vn",
+        "1A": "call_vn2",
+        "1B": "tokenise",
+        "1C": "encode_text",
+        "1D": "copy_table",
+        "1E": "print_table",
+        "1F": "check_arg_count"
+      },
+      "EXT": {
+        "00": "save",
+        "01": "restore",
+        "02": "log_shift",
+        "03": "art_shift",
+        "04": "set_font",
+        "09": "save_undo",
+        "0A": "restore_undo",
+        "0B": "print_unicode",
+        "0C": "check_unicode",
+        "0D": "set_true_colour"
+      }
+    },
+    "v6": {
+      "2OP": {
+        "01": "je",
+        "02": "jl",
+        "03": "jg",
+        "04": "dec_chk",
+        "05": "inc_chk",
+        "06": "jin",
+        "07": "test",
+        "08": "or",
+        "09": "and",
+        "0A": "test_attr",
+        "0B": "set_attr",
+        "0C": "clear_attr",
+        "0D": "store",
+        "0E": "insert_obj",
+        "0F": "loadw",
+        "10": "loadb",
+        "11": "get_prop",
+        "12": "get_prop_addr",
+        "13": "get_next_prop",
+        "14": "add",
+        "15": "sub",
+        "16": "mul",
+        "17": "div",
+        "18": "mod",
+        "19": "call_2s",
+        "1A": "call_2n",
+        "1B": "set_colour",
+        "1C": "throw"
+      },
+      "1OP": {
+        "00": "jz",
+        "01": "get_sibling",
+        "02": "get_child",
+        "03": "get_parent",
+        "04": "get_prop_len",
+        "05": "inc",
+        "06": "dec",
+        "07": "print_addr",
+        "08": "call_1s",
+        "09": "remove_obj",
+        "0A": "print_obj",
+        "0B": "ret",
+        "0C": "jump",
+        "0D": "print_paddr",
+        "0E": "load",
+        "0F": "call_1n"
+      },
+      "0OP": {
+        "00": "rtrue",
+        "01": "rfalse",
+        "02": "print",
+        "03": "print_ret",
+        "07": "restart",
+        "08": "ret_popped",
+        "09": "catch",
+        "0A": "quit",
+        "0B": "new_line",
+        "0E": "extended",
+        "0F": "piracy"
+      },
+      "VAR": {
+        "00": "call_vs",
+        "01": "storew",
+        "02": "storeb",
+        "03": "put_prop",
+        "04": "aread",
+        "05": "print_char",
+        "06": "print_num",
+        "07": "random",
+        "08": "push",
+        "09": "pull",
+        "0C": "call_vs2",
+        "0D": "erase_window",
+        "0E": "erase_line",
+        "0F": "set_cursor",
+        "10": "get_cursor",
+        "11": "set_text_style",
+        "12": "buffer_mode",
+        "13": "output_stream",
+        "14": "input_stream",
+        "15": "sound_effect",
+        "16": "read_char",
+        "17": "scan_table",
+        "18": "not",
+        "19": "call_vn",
+        "1A": "call_vn2",
+        "1B": "tokenise",
+        "1C": "encode_text",
+        "1D": "copy_table",
+        "1E": "print_table",
+        "1F": "check_arg_count"
+      },
+      "EXT": {
+        "00": "save",
+        "01": "restore",
+        "02": "log_shift",
+        "03": "art_shift",
+        "04": "set_font",
+        "05": "draw_picture",
+        "06": "picture_data",
+        "07": "erase_picture",
+        "08": "set_margins",
+        "09": "save_undo",
+        "0A": "restore_undo",
+        "0B": "print_unicode",
+        "0C": "check_unicode",
+        "0D": "set_true_colour",
+        "10": "move_window",
+        "11": "window_size",
+        "12": "window_style",
+        "13": "get_wind_prop",
+        "14": "scroll_window",
+        "15": "pop_stack",
+        "16": "read_mouse",
+        "17": "mouse_window",
+        "18": "push_stack",
+        "19": "put_wind_prop",
+        "1A": "print_form",
+        "1B": "make_menu",
+        "1C": "picture_table",
+        "1D": "buffer_screen"
+      }
+    },
+    "v7": {
+      "2OP": {
+        "01": "je",
+        "02": "jl",
+        "03": "jg",
+        "04": "dec_chk",
+        "05": "inc_chk",
+        "06": "jin",
+        "07": "test",
+        "08": "or",
+        "09": "and",
+        "0A": "test_attr",
+        "0B": "set_attr",
+        "0C": "clear_attr",
+        "0D": "store",
+        "0E": "insert_obj",
+        "0F": "loadw",
+        "10": "loadb",
+        "11": "get_prop",
+        "12": "get_prop_addr",
+        "13": "get_next_prop",
+        "14": "add",
+        "15": "sub",
+        "16": "mul",
+        "17": "div",
+        "18": "mod",
+        "19": "call_2s",
+        "1A": "call_2n",
+        "1B": "set_colour"
+      },
+      "1OP": {
+        "00": "jz",
+        "01": "get_sibling",
+        "02": "get_child",
+        "03": "get_parent",
+        "04": "get_prop_len",
+        "05": "inc",
+        "06": "dec",
+        "07": "print_addr",
+        "08": "call_1s",
+        "09": "remove_obj",
+        "0A": "print_obj",
+        "0B": "ret",
+        "0C": "jump",
+        "0D": "print_paddr",
+        "0E": "load",
+        "0F": "call_1n"
+      },
+      "0OP": {
+        "00": "rtrue",
+        "01": "rfalse",
+        "02": "print",
+        "03": "print_ret",
+        "07": "restart",
+        "08": "ret_popped",
+        "09": "catch",
+        "0A": "quit",
+        "0B": "new_line",
+        "0E": "extended",
+        "0F": "piracy"
+      },
+      "VAR": {
+        "00": "call_vs",
+        "01": "storew",
+        "02": "storeb",
+        "03": "put_prop",
+        "04": "aread",
+        "05": "print_char",
+        "06": "print_num",
+        "07": "random",
+        "08": "push",
+        "09": "pull",
+        "0C": "call_vs2",
+        "0D": "erase_window",
+        "0E": "erase_line",
+        "0F": "set_cursor",
+        "10": "get_cursor",
+        "11": "set_text_style",
+        "12": "buffer_mode",
+        "13": "output_stream",
+        "14": "input_stream",
+        "15": "sound_effect",
+        "16": "read_char",
+        "17": "scan_table",
+        "18": "not",
+        "19": "call_vn",
+        "1A": "call_vn2",
+        "1B": "tokenise",
+        "1C": "encode_text",
+        "1D": "copy_table",
+        "1E": "print_table",
+        "1F": "check_arg_count"
+      },
+      "EXT": {
+        "00": "save",
+        "01": "restore",
+        "02": "log_shift",
+        "03": "art_shift",
+        "04": "set_font",
+        "09": "save_undo",
+        "0A": "restore_undo",
+        "0B": "print_unicode",
+        "0C": "check_unicode",
+        "0D": "set_true_colour",
+        "1D": "buffer_screen"
+      }
+    },
+    "v8": {
+      "2OP": {
+        "01": "je",
+        "02": "jl",
+        "03": "jg",
+        "04": "dec_chk",
+        "05": "inc_chk",
+        "06": "jin",
+        "07": "test",
+        "08": "or",
+        "09": "and",
+        "0A": "test_attr",
+        "0B": "set_attr",
+        "0C": "clear_attr",
+        "0D": "store",
+        "0E": "insert_obj",
+        "0F": "loadw",
+        "10": "loadb",
+        "11": "get_prop",
+        "12": "get_prop_addr",
+        "13": "get_next_prop",
+        "14": "add",
+        "15": "sub",
+        "16": "mul",
+        "17": "div",
+        "18": "mod",
+        "19": "call_2s",
+        "1A": "call_2n",
+        "1B": "set_colour"
+      },
+      "1OP": {
+        "00": "jz",
+        "01": "get_sibling",
+        "02": "get_child",
+        "03": "get_parent",
+        "04": "get_prop_len",
+        "05": "inc",
+        "06": "dec",
+        "07": "print_addr",
+        "08": "call_1s",
+        "09": "remove_obj",
+        "0A": "print_obj",
+        "0B": "ret",
+        "0C": "jump",
+        "0D": "print_paddr",
+        "0E": "load",
+        "0F": "call_1n"
+      },
+      "0OP": {
+        "00": "rtrue",
+        "01": "rfalse",
+        "02": "print",
+        "03": "print_ret",
+        "07": "restart",
+        "08": "ret_popped",
+        "09": "catch",
+        "0A": "quit",
+        "0B": "new_line",
+        "0E": "extended",
+        "0F": "piracy"
+      },
+      "VAR": {
+        "00": "call_vs",
+        "01": "storew",
+        "02": "storeb",
+        "03": "put_prop",
+        "04": "aread",
+        "05": "print_char",
+        "06": "print_num",
+        "07": "random",
+        "08": "push",
+        "09": "pull",
+        "0C": "call_vs2",
+        "0D": "erase_window",
+        "0E": "erase_line",
+        "0F": "set_cursor",
+        "10": "get_cursor",
+        "11": "set_text_style",
+        "12": "buffer_mode",
+        "13": "output_stream",
+        "14": "input_stream",
+        "15": "sound_effect",
+        "16": "read_char",
+        "17": "scan_table",
+        "18": "not",
+        "19": "call_vn",
+        "1A": "call_vn2",
+        "1B": "tokenise",
+        "1C": "encode_text",
+        "1D": "copy_table",
+        "1E": "print_table",
+        "1F": "check_arg_count"
+      },
+      "EXT": {
+        "00": "save",
+        "01": "restore",
+        "02": "log_shift",
+        "03": "art_shift",
+        "04": "set_font",
+        "09": "save_undo",
+        "0A": "restore_undo",
+        "0B": "print_unicode",
+        "0C": "check_unicode",
+        "0D": "set_true_colour",
+        "1D": "buffer_screen"
+      }
+    }
+  },
+  "canonical": {
+    "2OP": [
+      {
+        "hex": "01",
+        "mnemonic": "je",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "02",
+        "mnemonic": "jl",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "03",
+        "mnemonic": "jg",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "04",
+        "mnemonic": "dec_chk",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "05",
+        "mnemonic": "inc_chk",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "06",
+        "mnemonic": "jin",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "07",
+        "mnemonic": "test",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "08",
+        "mnemonic": "or",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "09",
+        "mnemonic": "and",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "0A",
+        "mnemonic": "test_attr",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "0B",
+        "mnemonic": "set_attr",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "0C",
+        "mnemonic": "clear_attr",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "0D",
+        "mnemonic": "store",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "0E",
+        "mnemonic": "insert_obj",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "0F",
+        "mnemonic": "loadw",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "10",
+        "mnemonic": "loadb",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "11",
+        "mnemonic": "get_prop",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "12",
+        "mnemonic": "get_prop_addr",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "13",
+        "mnemonic": "get_next_prop",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "14",
+        "mnemonic": "add",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "15",
+        "mnemonic": "sub",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "16",
+        "mnemonic": "mul",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "17",
+        "mnemonic": "div",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "18",
+        "mnemonic": "mod",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "19",
+        "mnemonic": "call_2s",
+        "versions": [
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "1A",
+        "mnemonic": "call_2n",
+        "versions": [
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "1B",
+        "mnemonic": "set_colour",
+        "versions": [
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "1C",
+        "mnemonic": "throw",
+        "versions": [
+          5,
+          6
+        ]
+      }
+    ],
+    "1OP": [
+      {
+        "hex": "00",
+        "mnemonic": "jz",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "01",
+        "mnemonic": "get_sibling",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "02",
+        "mnemonic": "get_child",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "03",
+        "mnemonic": "get_parent",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "04",
+        "mnemonic": "get_prop_len",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "05",
+        "mnemonic": "inc",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "06",
+        "mnemonic": "dec",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "07",
+        "mnemonic": "print_addr",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "08",
+        "mnemonic": "call_1s",
+        "versions": [
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "09",
+        "mnemonic": "remove_obj",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "0A",
+        "mnemonic": "print_obj",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "0B",
+        "mnemonic": "ret",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "0C",
+        "mnemonic": "jump",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "0D",
+        "mnemonic": "print_paddr",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "0E",
+        "mnemonic": "load",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "0F",
+        "mnemonic_by_version": {
+          "v1": "not",
+          "v2": "not",
+          "v3": "not",
+          "v4": "not",
+          "v5": "call_1n",
+          "v6": "call_1n",
+          "v7": "call_1n",
+          "v8": "call_1n"
+        },
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      }
+    ],
+    "0OP": [
+      {
+        "hex": "00",
+        "mnemonic": "rtrue",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "01",
+        "mnemonic": "rfalse",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "02",
+        "mnemonic": "print",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "03",
+        "mnemonic": "print_ret",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "04",
+        "mnemonic": "nop",
+        "versions": [
+          1
+        ]
+      },
+      {
+        "hex": "05",
+        "mnemonic": "save",
+        "versions": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      {
+        "hex": "06",
+        "mnemonic": "restore",
+        "versions": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      {
+        "hex": "07",
+        "mnemonic": "restart",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "08",
+        "mnemonic": "ret_popped",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "09",
+        "mnemonic_by_version": {
+          "v1": "pop",
+          "v2": "pop",
+          "v3": "pop",
+          "v4": "pop",
+          "v5": "catch",
+          "v6": "catch",
+          "v7": "catch",
+          "v8": "catch"
+        },
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "0A",
+        "mnemonic": "quit",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "0B",
+        "mnemonic": "new_line",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "0C",
+        "mnemonic": "show_status",
+        "versions": [
+          3
+        ]
+      },
+      {
+        "hex": "0D",
+        "mnemonic": "verify",
+        "versions": [
+          3
+        ]
+      },
+      {
+        "hex": "0E",
+        "mnemonic": "extended",
+        "versions": [
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "0F",
+        "mnemonic": "piracy",
+        "versions": [
+          5,
+          6,
+          7,
+          8
+        ]
+      }
+    ],
+    "VAR": [
+      {
+        "hex": "00",
+        "mnemonic_by_version": {
+          "v1": "call",
+          "v2": "call",
+          "v3": "call",
+          "v4": "call_vs",
+          "v5": "call_vs",
+          "v6": "call_vs",
+          "v7": "call_vs",
+          "v8": "call_vs"
+        },
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "01",
+        "mnemonic": "storew",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "02",
+        "mnemonic": "storeb",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "03",
+        "mnemonic": "put_prop",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "04",
+        "mnemonic_by_version": {
+          "v1": "sread",
+          "v2": "sread",
+          "v3": "sread",
+          "v4": "sread",
+          "v5": "aread",
+          "v6": "aread",
+          "v7": "aread",
+          "v8": "aread"
+        },
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "05",
+        "mnemonic": "print_char",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "06",
+        "mnemonic": "print_num",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "07",
+        "mnemonic": "random",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "08",
+        "mnemonic": "push",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "09",
+        "mnemonic": "pull",
+        "versions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "0A",
+        "mnemonic": "split_window",
+        "versions": [
+          3
+        ]
+      },
+      {
+        "hex": "0B",
+        "mnemonic": "set_window",
+        "versions": [
+          3
+        ]
+      },
+      {
+        "hex": "0C",
+        "mnemonic": "call_vs2",
+        "versions": [
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "0D",
+        "mnemonic": "erase_window",
+        "versions": [
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "0E",
+        "mnemonic": "erase_line",
+        "versions": [
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "0F",
+        "mnemonic": "set_cursor",
+        "versions": [
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "10",
+        "mnemonic": "get_cursor",
+        "versions": [
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "11",
+        "mnemonic": "set_text_style",
+        "versions": [
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "12",
+        "mnemonic": "buffer_mode",
+        "versions": [
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "13",
+        "mnemonic": "output_stream",
+        "versions": [
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "14",
+        "mnemonic": "input_stream",
+        "versions": [
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "15",
+        "mnemonic": "sound_effect",
+        "versions": [
+          3,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "16",
+        "mnemonic": "read_char",
+        "versions": [
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "17",
+        "mnemonic": "scan_table",
+        "versions": [
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "18",
+        "mnemonic": "not",
+        "versions": [
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "19",
+        "mnemonic": "call_vn",
+        "versions": [
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "1A",
+        "mnemonic": "call_vn2",
+        "versions": [
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "1B",
+        "mnemonic": "tokenise",
+        "versions": [
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "1C",
+        "mnemonic": "encode_text",
+        "versions": [
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "1D",
+        "mnemonic": "copy_table",
+        "versions": [
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "1E",
+        "mnemonic": "print_table",
+        "versions": [
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "1F",
+        "mnemonic": "check_arg_count",
+        "versions": [
+          5,
+          6,
+          7,
+          8
+        ]
+      }
+    ],
+    "EXT": [
+      {
+        "hex": "00",
+        "mnemonic": "save",
+        "versions": [
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "01",
+        "mnemonic": "restore",
+        "versions": [
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "02",
+        "mnemonic": "log_shift",
+        "versions": [
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "03",
+        "mnemonic": "art_shift",
+        "versions": [
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "04",
+        "mnemonic": "set_font",
+        "versions": [
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "05",
+        "mnemonic": "draw_picture",
+        "versions": [
+          6
+        ]
+      },
+      {
+        "hex": "06",
+        "mnemonic": "picture_data",
+        "versions": [
+          6
+        ]
+      },
+      {
+        "hex": "07",
+        "mnemonic": "erase_picture",
+        "versions": [
+          6
+        ]
+      },
+      {
+        "hex": "08",
+        "mnemonic": "set_margins",
+        "versions": [
+          6
+        ]
+      },
+      {
+        "hex": "09",
+        "mnemonic": "save_undo",
+        "versions": [
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "0A",
+        "mnemonic": "restore_undo",
+        "versions": [
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "0B",
+        "mnemonic": "print_unicode",
+        "versions": [
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "0C",
+        "mnemonic": "check_unicode",
+        "versions": [
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "0D",
+        "mnemonic": "set_true_colour",
+        "versions": [
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "hex": "10",
+        "mnemonic": "move_window",
+        "versions": [
+          6
+        ]
+      },
+      {
+        "hex": "11",
+        "mnemonic": "window_size",
+        "versions": [
+          6
+        ]
+      },
+      {
+        "hex": "12",
+        "mnemonic": "window_style",
+        "versions": [
+          6
+        ]
+      },
+      {
+        "hex": "13",
+        "mnemonic": "get_wind_prop",
+        "versions": [
+          6
+        ]
+      },
+      {
+        "hex": "14",
+        "mnemonic": "scroll_window",
+        "versions": [
+          6
+        ]
+      },
+      {
+        "hex": "15",
+        "mnemonic": "pop_stack",
+        "versions": [
+          6
+        ]
+      },
+      {
+        "hex": "16",
+        "mnemonic": "read_mouse",
+        "versions": [
+          6
+        ]
+      },
+      {
+        "hex": "17",
+        "mnemonic": "mouse_window",
+        "versions": [
+          6
+        ]
+      },
+      {
+        "hex": "18",
+        "mnemonic": "push_stack",
+        "versions": [
+          6
+        ]
+      },
+      {
+        "hex": "19",
+        "mnemonic": "put_wind_prop",
+        "versions": [
+          6
+        ]
+      },
+      {
+        "hex": "1A",
+        "mnemonic": "print_form",
+        "versions": [
+          6
+        ]
+      },
+      {
+        "hex": "1B",
+        "mnemonic": "make_menu",
+        "versions": [
+          6
+        ]
+      },
+      {
+        "hex": "1C",
+        "mnemonic": "picture_table",
+        "versions": [
+          6
+        ]
+      },
+      {
+        "hex": "1D",
+        "mnemonic": "buffer_screen",
+        "versions": [
+          6,
+          7,
+          8
+        ]
+      }
+    ]
+  }
+}

@@ -1009,16 +1009,10 @@ public class MemoryLayoutManager {
         // Property tables start after the object table in static memory
         var currentOffset = calculateObjectTableSize()
 
-        print("DEBUG: Generating property tables")
-        print("       Object table size: \(calculateObjectTableSize())")
-        print("       Starting property offset: \(currentOffset)")
-        print("       Number of objects: \(objectTable.count)")
-
         // Generate property table for each object
         for (objectIndex, object) in objectTable.enumerated() {
             if object.properties.isEmpty {
                 // Object has no properties - set property table address to 0
-                print("       Object \(object.name): No properties, setting address to 0")
                 objectTable[objectIndex].propertyTableAddress = 0
             } else {
                 // Object has properties - generate property table
