@@ -346,17 +346,6 @@ struct RunCommand: ParsableCommand {
         // Initialize logging with appropriate verbosity level
         ZILLogger.bootstrap(logLevel: logLevel)
 
-        print("Running ZIL project/game from \(input)")
-        if debug {
-            print("VM debug mode enabled")
-        }
-        if let transcript = transcript {
-            print("Recording transcript to: \(transcript)")
-        }
-        if let saveDir = saveDir {
-            print("Save directory: \(saveDir)")
-        }
-
         // Detect input type and handle appropriately
         let storyFileURL: URL
 
@@ -364,7 +353,11 @@ struct RunCommand: ParsableCommand {
            input.hasSuffix(".z6") || input.hasSuffix(".z8") {
             // Direct story file
             storyFileURL = URL(fileURLWithPath: input)
-            print("Loading story file: \(input)")
+
+            if debug {
+                print("Running ZIL project/game from \(input)")
+                print("Loading story file: \(input)")
+            }
         } else {
             // ZIL source or directory - would need compilation (not implemented yet)
             print("Error: ZIL compilation not yet implemented in run command")
@@ -384,20 +377,20 @@ struct RunCommand: ParsableCommand {
                 try vm.enableTracing(to: traceURL)
             }
 
-            // Set up I/O delegates for CLI interaction
-            let inputDelegate = CLIInputDelegate()
-            let outputDelegate = CLIOutputDelegate()
-
-            vm.inputDelegate = inputDelegate
-            vm.outputDelegate = outputDelegate
+            // Set up terminal interface for authentic Z-Machine v3 experience
+            let terminalDelegate = ZMachineTerminalDelegate(zmachine: vm)
+            vm.inputDelegate = terminalDelegate
+            vm.outputDelegate = terminalDelegate
 
             if debug {
                 print("✓ Story file loaded successfully")
                 print("  Version: \(vm.version.rawValue)")
                 print("  Memory validation: \(vm.validateMemoryManagement() ? "✓" : "✗")")
+                print("Press Enter to start...")
+                _ = readLine()
             }
 
-            print("Starting game...\n")
+            // Game starts here - terminal interface handles all output
             try vm.run()
 
         } catch {
