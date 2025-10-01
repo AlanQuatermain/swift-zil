@@ -195,7 +195,7 @@ extension ZMachine {
 
         case 0x0D: // PRINT_PADDR
             // Print packed address string
-            let unpackedAddress = unpackAddress(UInt32(operand), type: .string)
+            let unpackedAddress = unpackAddress(UInt32(UInt16(bitPattern: operand)), type: .string)
             let text = try readZString(at: unpackedAddress)
             outputText(text.string)
 
@@ -304,9 +304,7 @@ extension ZMachine {
         case 0x11: // GET_PROP
             let objectNum = UInt16(bitPattern: operand1)
             let propertyNum = UInt8(operand2 & 0xFF)
-            // print("DEBUG: GET_PROP instruction - object=\(objectNum), property=\(propertyNum)")
             let propertyValue = objectTree.getProperty(objectNum, property: propertyNum)
-            // print("DEBUG: GET_PROP - got property value \(propertyValue) (0x\(String(propertyValue, radix: 16, uppercase: true)))")
             try storeResult(Int16(bitPattern: propertyValue))
 
         case 0x12: // GET_PROP_ADDR
@@ -730,6 +728,12 @@ extension ZMachine {
             let storeVariable = try readByte(at: programCounter)
             programCounter += 1  // PC now points to next instruction (return address)
             postDecodePC = programCounter  // Save for tracing
+
+            // Trace the store byte
+            traceStoreByte(storeVariable)
+
+            // Trace the CALL setup
+            traceText("CALL setup: routine=\(routineAddress), args=\(arguments), store_var=\(storeVariable)")
 
             _ = try callRoutine(routineAddress, arguments: arguments, storeVariable: storeVariable)
 

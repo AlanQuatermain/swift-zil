@@ -188,15 +188,11 @@ public class ObjectTree {
     ///   - property: Property number (1-31)
     /// - Returns: Property value or default if not found
     public func getProperty(_ objectNumber: UInt16, property: UInt8) -> UInt16 {
-        // print("DEBUG: getProperty called - object=\(objectNumber), property=\(property)")
-
         guard let object = objects[objectNumber] else {
-            // print("DEBUG: Object \(objectNumber) not found, returning default for property \(property): \(propertyDefaults[property] ?? 0)")
             return propertyDefaults[property] ?? 0
         }
 
         let result = object.getProperty(property) ?? propertyDefaults[property] ?? 0
-        // print("DEBUG: getProperty result - object=\(objectNumber), property=\(property), value=\(result) (0x\(String(result, radix: 16, uppercase: true)))")
         return result
     }
 

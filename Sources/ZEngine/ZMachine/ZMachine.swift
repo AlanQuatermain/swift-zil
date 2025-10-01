@@ -170,6 +170,7 @@ public class ZMachine {
         let opcode: UInt8
         var type: String = ""
         var operands: [Int16] = []
+        var storeByte: UInt8?
     }
 
     /// Begin tracing a new instruction
@@ -194,6 +195,47 @@ public class ZMachine {
     internal func traceType(_ type: String) {
         guard traceFileHandle != nil else { return }
         currentInstruction?.type = type
+    }
+
+    /// Set the store byte for the current instruction trace
+    internal func traceStoreByte(_ storeByte: UInt8) {
+        guard traceFileHandle != nil else { return }
+        currentInstruction?.storeByte = storeByte
+    }
+
+    /// Write a text line to the trace log
+    internal func traceText(_ text: String) {
+        guard let traceHandle = traceFileHandle else { return }
+        let traceLine = "# \(text)\n"
+        traceHandle.write(traceLine.data(using: .utf8) ?? Data())
+        traceHandle.synchronizeFile()
+    }
+
+    /// Check if an instruction has a store byte based on opcode and type
+    private func hasStoreByte(opcode: UInt8, type: String) -> Bool {
+        switch type {
+        case "1OP":
+            let baseOpcode = opcode & 0x0F
+            return [0x01, 0x02, 0x03, 0x04, 0x08, 0x0E, 0x0F].contains(baseOpcode) // GET_SIBLING, GET_CHILD, GET_PARENT, GET_PROP_LEN, CALL_1S, LOAD, NOT/CALL_1N
+
+        case "2OP":
+            let baseOpcode = opcode & 0x1F
+            return [0x08, 0x09, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19].contains(baseOpcode) // OR, AND, LOADW, LOADB, GET_PROP, GET_PROP_ADDR, GET_NEXT_PROP, ADD, SUB, MUL, DIV, MOD, CALL_2S
+
+        case "2OP_VAR":
+            let baseOpcode = opcode & 0x1F
+            return [0x08, 0x09, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19].contains(baseOpcode) // Same as 2OP
+
+        case "VAR":
+            let baseOpcode = opcode & 0x1F
+            return [0x00, 0x07].contains(baseOpcode) // CALL/CALL_VS, RANDOM
+
+        case "EXT":
+            return [0x00, 0x01, 0x02, 0x03, 0x04, 0x09, 0x0A, 0x0B, 0x0C, 0x13].contains(opcode) // Extended opcodes with store bytes
+
+        default:
+            return false
+        }
     }
 
     /// Get the mnemonic for an opcode based on its type and value
@@ -404,7 +446,15 @@ public class ZMachine {
         let bytesStr = bytesConsumed.map { String(format: "0x%02X", $0) }.joined(separator: " ")
         let mnemonic = getMnemonic(opcode: instruction.opcode, type: instruction.type)
 
-        let traceLine = "\(instruction.startAddress): 0x\(String(instruction.opcode, radix: 16, uppercase: true)) \(mnemonic) (\(instruction.type)) [\(operandStr)] [\(bytesStr)]\n"
+        // Add store byte information if applicable
+        let storeByteStr: String
+        if let storeByte = instruction.storeByte {
+            storeByteStr = " store=0x\(String(format: "%02X", storeByte))"
+        } else {
+            storeByteStr = ""
+        }
+
+        let traceLine = "\(instruction.startAddress): 0x\(String(instruction.opcode, radix: 16, uppercase: true)) \(mnemonic) (\(instruction.type)) [\(operandStr)]\(storeByteStr) [\(bytesStr)]\n"
 
 //                              instruction.startAddress,
 //                              instruction.opcode,

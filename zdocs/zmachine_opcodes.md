@@ -5,15 +5,134 @@ It integrates the corrected mapping, so that confusing cases (e.g. 0xC1 vs 0xE1)
 
 ---
 
-## Decoding Summary
+## Z-Machine Opcodes — Corrected Overview
 
-- **00–7F** → 2OP form (long)  
-- **80–9F** → 1OP form (short)  
-- **A0–AF** → 0OP form (short)  
-- **B0–BF** → 0OP/1OP continuation (see table)  
-- **C0–DF** → VAR form re‑encoding of 2OP:0–31 (with type byte)  
-- **E0–FF** → VAR instructions (main VAR table)  
-- **BE** → EXT prefix (followed by an extra byte indexing the EXT table)
+This document corrects the earlier summary and aligns with the Z-Machine Standard (v1.1). It explains how to decode the **first opcode byte**, how the **forms** (long/short/variable/extended) and **operand counts** (2OP/1OP/0OP/VAR) interrelate, and why ranges like `0xA0–0xAF` are **1OP**, not 0OP.
+
+---
+
+### 1) First opcode byte: ranges and meaning
+
+> The high bits of the **first opcode byte** pick the form. In **short form**, bits 5–4 pick the **operand type**; if those bits are `11` (omitted), the count is **0OP**; otherwise it’s **1OP**.
+
+```
+Byte range   Form     Meaning inside the range
+-----------  -------  -----------------------------------------------------------
+00–7F        long     2OP form ("long"). Low 5 bits are the opcode number.
+80–BF        short    short form. Bits 5–4 = operand type → determines 1OP vs 0OP:
+                         80–8F : 1OP with operand type = large constant (00)
+                         90–9F : 1OP with operand type = small constant (01)
+                         A0–AF : 1OP with operand type = variable      (10)
+                         B0–BF : 0OP (operand omitted)                 (11)
+C0–DF        variable variable form **re-encoding of 2OP** (bit 5 = 0)
+E0–FF        variable variable form **VAR** instructions     (bit 5 = 1)
+BE           special  Extended prefix (v5+). Second byte selects EXT opcode.
+```
+
+**Key fixes compared to the old doc**
+
+* `A0–AF` are **1OP** (short form, operand type = **variable**), **not** 0OP.
+* `B0–BF` are the **0OP** short-form block (operand type = **omitted**).
+* `C0–DF` and `E0–FF` are both **variable form**; bit 5 distinguishes **2OP re-encodings** vs **true VAR**.
+
+---
+
+### 2) Bit layouts you’ll actually use
+
+#### 2.1 Short form (covers 0OP and 1OP)
+
+```
+7 6 5 4 3 2 1 0
+1 0 t t  o o o o
+^ ^ ^ ^  ^^^^^^^
+| | | |  └─ opcode number (0..15) within the short-form table
+| | └┴── operand type t t : 00=large const, 01=small const, 10=variable, 11=omitted
+| └───── short form (10)
+└─────── short form (10)
+```
+
+* If `t t = 11` → **0OP** (no operand bytes follow).
+* Otherwise → **1OP** (exactly one operand; its size comes from `t t`).
+
+#### 2.2 Long form (2OP)
+
+```
+7 6 5 4 3 2 1 0
+0 x y o o o o o    (x=type of operand1, y=type of operand2; 0=small const, 1=variable)
+```
+
+* Always **2OP**; if an instruction needs a large constant operand, it will be assembled in **variable** form instead.
+
+#### 2.3 Variable form
+
+```
+7 6 5 4 3 2 1 0   → first byte = 1 1 c o o o o o  (c = 0→2OP, 1→VAR)
+[types byte(s)]   → four 2‑bit fields of operand types (00/01/10/11)
+```
+
+* In **variable** form, you get a separate **types byte** which enumerates operand types.
+
+#### 2.4 Extended form
+
+* The first opcode byte is literally `0xBE` in V5+ and a **second opcode byte** picks the EXT opcode.
+
+---
+
+### 3) “Opcode number” vs literal byte
+
+The Standard’s tables list entries like **`1OP:128`** with a **Hex column 0..F**. That **Hex** column is the opcode number **within the class**, **not** the literal byte value you see in memory. In short form, the **bottom nibble** is the within-class opcode; the **top bits** encode the form and operand type.
+
+---
+
+### 4) Where JZ and friends live (examples)
+
+* **`jz`** is **1OP**, opcode number **hex 0** within the 1OP table.
+* Depending on the operand type, the **first opcode byte** will be one of:
+
+  * `0x80` (large-constant 1OP),
+  * `0x90` (small-constant 1OP),
+  * `0xA0` (variable 1OP).
+* The **0OP block** (`0xB0–0xBF`) does **not** contain `jz`.
+
+#### Encodings you will see
+
+```
+@jz 0              → 0x80 0x00 0x00  [then branch bytes]
+@jz 44             → 0x90 0x2C       [then branch bytes]
+@jz [var] (e.g., sp) → 0xA0 0x00       [then branch bytes]   ; var#0 = stack
+```
+
+*(Branch bytes follow the operand; short/long branch is chosen by the assembler.)*
+
+---
+
+### 5) Quick index by first byte
+
+* **00–7F**: 2OP long-form encodings (two operands; small-const/variable combo embedded in the opcode bits)
+* **80–8F**: 1OP, large-constant operand (e.g., `0x80` = 1OP hex 0 → `jz` large-const)
+* **90–9F**: 1OP, small-constant operand
+* **A0–AF**: 1OP, variable operand (var# byte follows)
+* **B0–BF**: 0OP (no operands). Note `0xBE` is the **extended prefix** in V5+.
+* **C0–DF**: variable form, **2OP re-encodings** (bit 5 = 0)
+* **E0–FF**: variable form, **VAR instructions** (bit 5 = 1)
+
+---
+
+### 6) Common pitfalls (and fixes)
+
+* Confusing the **Hex column** in the spec’s tables (0..F within the class) with the literal **first opcode byte** in memory. Use the **form** and **operand-type bits** to map from the byte to the table.
+* Assuming `A0–AF` are 0OP. They are **1OP with variable operands**; **0OP** is `B0–BF`.
+* Forgetting that `0xBE` is a short-form **0OP entry** repurposed as the **extended-opcode prefix** in V5+.
+
+---
+
+### 7) Branch bytes refresher (for JZ/JNZ/JE/…)
+
+* Branch opcodes carry **branch info** after the operand(s).
+* First branch byte: bit 7 = branch-on-true/false; bit 6 = short/long form. Short branch packs a 6‑bit offset; long branch uses 14 bits across two bytes.
+* Offsets 0 and 1 mean **return false/true**, respectively.
+
+---
 
 Key corrections:
 

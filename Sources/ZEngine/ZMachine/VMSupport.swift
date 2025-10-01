@@ -74,30 +74,43 @@ extension ZMachine {
 
     /// Read value from a variable
     func readVariable(_ variableNumber: UInt8) throws -> Int16 {
+        let value: Int16
         if variableNumber == 0 {
             // Stack
-            return popStack()
+            value = popStack()
         } else if variableNumber <= 15 {
             // Local variables (1-15)
             let localIndex = Int(variableNumber - 1)
             guard localIndex < locals.count else {
-                return 0 // Undefined local variables are 0
+                value = 0 // Undefined local variables are 0
+                traceText("READ variable \(variableNumber): undefined local -> 0")
+                return value
             }
-            return Int16(bitPattern: locals[localIndex])
+            value = Int16(bitPattern: locals[localIndex])
         } else {
             // Global variables (16-255 -> globals 0-239)
             let globalIndex = Int(variableNumber - 16)
             guard globalIndex < globals.count else {
                 throw RuntimeError.invalidMemoryAccess(globalIndex, location: SourceLocation.unknown)
             }
-            let value = Int16(bitPattern: globals[globalIndex])
-
-            return value
+            value = Int16(bitPattern: globals[globalIndex])
         }
+
+        // Trace variable reads for variable 0 (stack) or when value is 44
+        if variableNumber == 0 || value == 44 {
+            traceText("read variable \(variableNumber): \(value)")
+        }
+
+        return value
     }
 
     /// Write value to a variable
     func writeVariable(_ variableNumber: UInt8, value: Int16) throws {
+        // Trace variable writes for variable 0 (stack) or when value is 44
+        if variableNumber == 0 || value == 44 {
+            traceText("write variable \(variableNumber): \(value)")
+        }
+
         if variableNumber == 0 {
             // Stack
             try pushStack(value)
@@ -126,6 +139,13 @@ extension ZMachine {
     func storeResult(_ value: Int16) throws {
         let variableNumber = try readByte(at: programCounter)
         programCounter += 1
+
+        // Trace the store byte
+        traceStoreByte(variableNumber)
+
+        // Trace the result store operation
+        traceText("STORE: value=\(value) to variable=\(variableNumber)")
+
         try writeVariable(variableNumber, value: value)
     }
 
@@ -178,6 +198,10 @@ extension ZMachine {
     func callRoutine(_ packedAddress: UInt32, arguments: [Int16], storeVariable: UInt8? = nil) throws -> Int16 {
         if packedAddress == 0 {
             // Call to address 0 returns false immediately
+            if let storeVariable = storeVariable {
+                traceText("RETURN: value=0 to variable=\(storeVariable) (CALL to address 0)")
+                try writeVariable(storeVariable, value: 0)
+            }
             return 0
         }
 
@@ -247,7 +271,10 @@ extension ZMachine {
 
         // Store return value using saved store variable (if any)
         if let storeVariable = frame.storeVariable {
+            traceText("RETURN: value=\(value) to variable=\(storeVariable)")
             try writeVariable(storeVariable, value: value)
+        } else {
+            traceText("RETURN: value=\(value) discarded (CALL_VN)")
         }
         // If storeVariable is nil, this was CALL_VN and return value is discarded
     }
