@@ -1,2853 +1,1074 @@
 {
-  "metadata": {
-    "source": "Z-Machine Standard 1.1 §14 (Complete table of opcodes)",
-    "notes": [
-      "Opcode numbers are within-set numbers; do not include form or operand-type bits.",
-      "Some mnemonics vary by version (e.g., 1OP 0xF is 'not' in v1–4, 'call_1n' in v5+; 0OP 0x9 is 'pop' in v1–4, 'catch' in v5/6).",
-      "EXT 0x0E–0x0F and 0x1E–0xFF are reserved; interpreters should ignore unknown EXT opcodes >= 0x1D per the Standard."
+  "0xB0": {
+    "mnemonic": "rtrue",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
     ]
   },
-  "sets": {
-    "2OP": {
-      "form": "long",
-      "opcodes": [
-        {
-          "set": "2OP",
-          "form": "long",
-          "code_hex": "0x00",
-          "mnemonic": "[illegal]",
-          "illegal": true,
-          "reserved": false
-        },
-        {
-          "set": "2OP",
-          "form": "long",
-          "code_hex": "0x01",
-          "mnemonic": "je",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "2OP",
-          "form": "long",
-          "code_hex": "0x02",
-          "mnemonic": "jl",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "2OP",
-          "form": "long",
-          "code_hex": "0x03",
-          "mnemonic": "jg",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "2OP",
-          "form": "long",
-          "code_hex": "0x04",
-          "mnemonic": "dec_chk",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "2OP",
-          "form": "long",
-          "code_hex": "0x05",
-          "mnemonic": "inc_chk",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "2OP",
-          "form": "long",
-          "code_hex": "0x06",
-          "mnemonic": "jin",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "2OP",
-          "form": "long",
-          "code_hex": "0x07",
-          "mnemonic": "test",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "2OP",
-          "form": "long",
-          "code_hex": "0x08",
-          "mnemonic": "or",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "2OP",
-          "form": "long",
-          "code_hex": "0x09",
-          "mnemonic": "and",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "2OP",
-          "form": "long",
-          "code_hex": "0x0A",
-          "mnemonic": "test_attr",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "2OP",
-          "form": "long",
-          "code_hex": "0x0B",
-          "mnemonic": "set_attr",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "2OP",
-          "form": "long",
-          "code_hex": "0x0C",
-          "mnemonic": "clear_attr",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "2OP",
-          "form": "long",
-          "code_hex": "0x0D",
-          "mnemonic": "store",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "2OP",
-          "form": "long",
-          "code_hex": "0x0E",
-          "mnemonic": "insert_obj",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "2OP",
-          "form": "long",
-          "code_hex": "0x0F",
-          "mnemonic": "loadw",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "2OP",
-          "form": "long",
-          "code_hex": "0x10",
-          "mnemonic": "loadb",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "2OP",
-          "form": "long",
-          "code_hex": "0x11",
-          "mnemonic": "get_prop",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "2OP",
-          "form": "long",
-          "code_hex": "0x12",
-          "mnemonic": "get_prop_addr",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "2OP",
-          "form": "long",
-          "code_hex": "0x13",
-          "mnemonic": "get_next_prop",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "2OP",
-          "form": "long",
-          "code_hex": "0x14",
-          "mnemonic": "add",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "2OP",
-          "form": "long",
-          "code_hex": "0x15",
-          "mnemonic": "sub",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "2OP",
-          "form": "long",
-          "code_hex": "0x16",
-          "mnemonic": "mul",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "2OP",
-          "form": "long",
-          "code_hex": "0x17",
-          "mnemonic": "div",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "2OP",
-          "form": "long",
-          "code_hex": "0x18",
-          "mnemonic": "mod",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "2OP",
-          "form": "long",
-          "code_hex": "0x19",
-          "mnemonic": "call_2s",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "2OP",
-          "form": "long",
-          "code_hex": "0x1A",
-          "mnemonic": "call_2n",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "2OP",
-          "form": "long",
-          "code_hex": "0x1B",
-          "mnemonic": "set_colour",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "2OP",
-          "form": "long",
-          "code_hex": "0x1C",
-          "mnemonic": "throw",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "2OP",
-          "form": "long",
-          "code_hex": "0x1D",
-          "mnemonic": "[illegal]",
-          "illegal": true,
-          "reserved": false
-        },
-        {
-          "set": "2OP",
-          "form": "long",
-          "code_hex": "0x1E",
-          "mnemonic": "[illegal]",
-          "illegal": true,
-          "reserved": false
-        },
-        {
-          "set": "2OP",
-          "form": "long",
-          "code_hex": "0x1F",
-          "mnemonic": "[illegal]",
-          "illegal": true,
-          "reserved": false
-        }
-      ]
-    },
-    "1OP": {
-      "form": "short",
-      "opcodes": [
-        {
-          "set": "1OP",
-          "form": "short",
-          "code_hex": "0x0",
-          "mnemonic": "jz",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "1OP",
-          "form": "short",
-          "code_hex": "0x1",
-          "mnemonic": "get_sibling",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "1OP",
-          "form": "short",
-          "code_hex": "0x2",
-          "mnemonic": "get_child",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "1OP",
-          "form": "short",
-          "code_hex": "0x3",
-          "mnemonic": "get_parent",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "1OP",
-          "form": "short",
-          "code_hex": "0x4",
-          "mnemonic": "get_prop_len",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "1OP",
-          "form": "short",
-          "code_hex": "0x5",
-          "mnemonic": "inc",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "1OP",
-          "form": "short",
-          "code_hex": "0x6",
-          "mnemonic": "dec",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "1OP",
-          "form": "short",
-          "code_hex": "0x7",
-          "mnemonic": "print_addr",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "1OP",
-          "form": "short",
-          "code_hex": "0x8",
-          "mnemonic": "call_1s",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "1OP",
-          "form": "short",
-          "code_hex": "0x9",
-          "mnemonic": "remove_obj",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "1OP",
-          "form": "short",
-          "code_hex": "0xA",
-          "mnemonic": "print_obj",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "1OP",
-          "form": "short",
-          "code_hex": "0xB",
-          "mnemonic": "ret",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "1OP",
-          "form": "short",
-          "code_hex": "0xC",
-          "mnemonic": "jump",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "1OP",
-          "form": "short",
-          "code_hex": "0xD",
-          "mnemonic": "print_paddr",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "1OP",
-          "form": "short",
-          "code_hex": "0xE",
-          "mnemonic": "load",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "1OP",
-          "form": "short",
-          "code_hex": "0xF",
-          "mnemonic": "not / call_1n",
-          "illegal": false,
-          "reserved": false
-        }
-      ]
-    },
-    "0OP": {
-      "form": "short",
-      "opcodes": [
-        {
-          "set": "0OP",
-          "form": "short",
-          "code_hex": "0x0",
-          "mnemonic": "rtrue",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "0OP",
-          "form": "short",
-          "code_hex": "0x1",
-          "mnemonic": "rfalse",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "0OP",
-          "form": "short",
-          "code_hex": "0x2",
-          "mnemonic": "print",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "0OP",
-          "form": "short",
-          "code_hex": "0x3",
-          "mnemonic": "print_ret",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "0OP",
-          "form": "short",
-          "code_hex": "0x4",
-          "mnemonic": "nop",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "0OP",
-          "form": "short",
-          "code_hex": "0x5",
-          "mnemonic": "save",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "0OP",
-          "form": "short",
-          "code_hex": "0x6",
-          "mnemonic": "restore",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "0OP",
-          "form": "short",
-          "code_hex": "0x7",
-          "mnemonic": "restart",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "0OP",
-          "form": "short",
-          "code_hex": "0x8",
-          "mnemonic": "ret_popped",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "0OP",
-          "form": "short",
-          "code_hex": "0x9",
-          "mnemonic": "pop / catch",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "0OP",
-          "form": "short",
-          "code_hex": "0xA",
-          "mnemonic": "quit",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "0OP",
-          "form": "short",
-          "code_hex": "0xB",
-          "mnemonic": "new_line",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "0OP",
-          "form": "short",
-          "code_hex": "0xC",
-          "mnemonic": "show_status",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "0OP",
-          "form": "short",
-          "code_hex": "0xD",
-          "mnemonic": "verify",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "0OP",
-          "form": "short",
-          "code_hex": "0xE",
-          "mnemonic": "extended",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "0OP",
-          "form": "short",
-          "code_hex": "0xF",
-          "mnemonic": "piracy",
-          "illegal": false,
-          "reserved": false
-        }
-      ]
-    },
-    "VAR": {
-      "form": "variable",
-      "opcodes": [
-        {
-          "set": "VAR",
-          "form": "variable",
-          "code_hex": "0x00",
-          "mnemonic": "call / call_vs",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "VAR",
-          "form": "variable",
-          "code_hex": "0x01",
-          "mnemonic": "storew",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "VAR",
-          "form": "variable",
-          "code_hex": "0x02",
-          "mnemonic": "storeb",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "VAR",
-          "form": "variable",
-          "code_hex": "0x03",
-          "mnemonic": "put_prop",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "VAR",
-          "form": "variable",
-          "code_hex": "0x04",
-          "mnemonic": "sread / aread",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "VAR",
-          "form": "variable",
-          "code_hex": "0x05",
-          "mnemonic": "print_char",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "VAR",
-          "form": "variable",
-          "code_hex": "0x06",
-          "mnemonic": "print_num",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "VAR",
-          "form": "variable",
-          "code_hex": "0x07",
-          "mnemonic": "random",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "VAR",
-          "form": "variable",
-          "code_hex": "0x08",
-          "mnemonic": "push",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "VAR",
-          "form": "variable",
-          "code_hex": "0x09",
-          "mnemonic": "pull",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "VAR",
-          "form": "variable",
-          "code_hex": "0x0A",
-          "mnemonic": "split_window",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "VAR",
-          "form": "variable",
-          "code_hex": "0x0B",
-          "mnemonic": "set_window",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "VAR",
-          "form": "variable",
-          "code_hex": "0x0C",
-          "mnemonic": "call_vs2",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "VAR",
-          "form": "variable",
-          "code_hex": "0x0D",
-          "mnemonic": "erase_window",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "VAR",
-          "form": "variable",
-          "code_hex": "0x0E",
-          "mnemonic": "erase_line",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "VAR",
-          "form": "variable",
-          "code_hex": "0x0F",
-          "mnemonic": "set_cursor",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "VAR",
-          "form": "variable",
-          "code_hex": "0x10",
-          "mnemonic": "get_cursor",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "VAR",
-          "form": "variable",
-          "code_hex": "0x11",
-          "mnemonic": "set_text_style",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "VAR",
-          "form": "variable",
-          "code_hex": "0x12",
-          "mnemonic": "buffer_mode",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "VAR",
-          "form": "variable",
-          "code_hex": "0x13",
-          "mnemonic": "output_stream",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "VAR",
-          "form": "variable",
-          "code_hex": "0x14",
-          "mnemonic": "input_stream",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "VAR",
-          "form": "variable",
-          "code_hex": "0x15",
-          "mnemonic": "sound_effect",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "VAR",
-          "form": "variable",
-          "code_hex": "0x16",
-          "mnemonic": "read_char",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "VAR",
-          "form": "variable",
-          "code_hex": "0x17",
-          "mnemonic": "scan_table",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "VAR",
-          "form": "variable",
-          "code_hex": "0x18",
-          "mnemonic": "not",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "VAR",
-          "form": "variable",
-          "code_hex": "0x19",
-          "mnemonic": "call_vn",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "VAR",
-          "form": "variable",
-          "code_hex": "0x1A",
-          "mnemonic": "call_vn2",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "VAR",
-          "form": "variable",
-          "code_hex": "0x1B",
-          "mnemonic": "tokenise",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "VAR",
-          "form": "variable",
-          "code_hex": "0x1C",
-          "mnemonic": "encode_text",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "VAR",
-          "form": "variable",
-          "code_hex": "0x1D",
-          "mnemonic": "copy_table",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "VAR",
-          "form": "variable",
-          "code_hex": "0x1E",
-          "mnemonic": "print_table",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "VAR",
-          "form": "variable",
-          "code_hex": "0x1F",
-          "mnemonic": "check_arg_count",
-          "illegal": false,
-          "reserved": false
-        }
-      ]
-    },
-    "EXT": {
-      "form": "extended",
-      "opcodes": [
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x00",
-          "mnemonic": "save",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x01",
-          "mnemonic": "restore",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x02",
-          "mnemonic": "log_shift",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x03",
-          "mnemonic": "art_shift",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x04",
-          "mnemonic": "set_font",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x05",
-          "mnemonic": "draw_picture",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x06",
-          "mnemonic": "picture_data",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x07",
-          "mnemonic": "erase_picture",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x08",
-          "mnemonic": "set_margins",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x09",
-          "mnemonic": "save_undo",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x0A",
-          "mnemonic": "restore_undo",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x0B",
-          "mnemonic": "print_unicode",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x0C",
-          "mnemonic": "check_unicode",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x0D",
-          "mnemonic": "set_true_colour",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x0E",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x0F",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x10",
-          "mnemonic": "move_window",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x11",
-          "mnemonic": "window_size",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x12",
-          "mnemonic": "window_style",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x13",
-          "mnemonic": "get_wind_prop",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x14",
-          "mnemonic": "scroll_window",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x15",
-          "mnemonic": "pop_stack",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x16",
-          "mnemonic": "read_mouse",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x17",
-          "mnemonic": "mouse_window",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x18",
-          "mnemonic": "push_stack",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x19",
-          "mnemonic": "put_wind_prop",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x1A",
-          "mnemonic": "print_form",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x1B",
-          "mnemonic": "make_menu",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x1C",
-          "mnemonic": "picture_table",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x1D",
-          "mnemonic": "buffer_screen",
-          "illegal": false,
-          "reserved": false
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x1E",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x1F",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x20",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x21",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x22",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x23",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x24",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x25",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x26",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x27",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x28",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x29",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x2A",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x2B",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x2C",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x2D",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x2E",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x2F",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x30",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x31",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x32",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x33",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x34",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x35",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x36",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x37",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x38",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x39",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x3A",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x3B",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x3C",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x3D",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x3E",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x3F",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x40",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x41",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x42",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x43",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x44",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x45",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x46",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x47",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x48",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x49",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x4A",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x4B",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x4C",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x4D",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x4E",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x4F",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x50",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x51",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x52",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x53",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x54",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x55",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x56",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x57",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x58",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x59",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x5A",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x5B",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x5C",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x5D",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x5E",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x5F",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x60",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x61",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x62",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x63",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x64",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x65",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x66",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x67",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x68",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x69",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x6A",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x6B",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x6C",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x6D",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x6E",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x6F",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x70",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x71",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x72",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x73",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x74",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x75",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x76",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x77",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x78",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x79",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x7A",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x7B",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x7C",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x7D",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x7E",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x7F",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x80",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x81",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x82",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x83",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x84",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x85",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x86",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x87",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x88",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x89",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x8A",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x8B",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x8C",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x8D",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x8E",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x8F",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x90",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x91",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x92",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x93",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x94",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x95",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x96",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x97",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x98",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x99",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x9A",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x9B",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x9C",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x9D",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x9E",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0x9F",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xA0",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xA1",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xA2",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xA3",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xA4",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xA5",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xA6",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xA7",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xA8",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xA9",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xAA",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xAB",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xAC",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xAD",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xAE",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xAF",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xB0",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xB1",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xB2",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xB3",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xB4",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xB5",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xB6",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xB7",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xB8",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xB9",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xBA",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xBB",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xBC",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xBD",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xBE",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xBF",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xC0",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xC1",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xC2",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xC3",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xC4",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xC5",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xC6",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xC7",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xC8",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xC9",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xCA",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xCB",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xCC",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xCD",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xCE",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xCF",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xD0",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xD1",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xD2",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xD3",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xD4",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xD5",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xD6",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xD7",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xD8",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xD9",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xDA",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xDB",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xDC",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xDD",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xDE",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xDF",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xE0",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xE1",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xE2",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xE3",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xE4",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xE5",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xE6",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xE7",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xE8",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xE9",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xEA",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xEB",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xEC",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xED",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xEE",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xEF",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xF0",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xF1",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xF2",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xF3",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xF4",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xF5",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xF6",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xF7",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xF8",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xF9",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xFA",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xFB",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xFC",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xFD",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xFE",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        },
-        {
-          "set": "EXT",
-          "form": "extended",
-          "code_hex": "0xFF",
-          "mnemonic": "[reserved]",
-          "illegal": false,
-          "reserved": true
-        }
-      ]
-    }
+  "0xB1": {
+    "mnemonic": "rfalse",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0xB2": {
+    "mnemonic": "print",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0xB3": {
+    "mnemonic": "print_ret",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0xB4": {
+    "mnemonic": "nop",
+    "versions": [
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0xB5": {
+    "mnemonic": "restart",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0xB6": {
+    "mnemonic": "ret_popped",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0xB7": {
+    "mnemonic": "catch",
+    "versions": [
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0xB8": {
+    "mnemonic": "quit",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0xB9": {
+    "mnemonic": "new_line",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0xBA": {
+    "mnemonic": "verify",
+    "versions": [
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x80": {
+    "mnemonic": "jz",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x81": {
+    "mnemonic": "get_sibling",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x82": {
+    "mnemonic": "get_child",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x83": {
+    "mnemonic": "get_parent",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x84": {
+    "mnemonic": "get_prop_len",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x85": {
+    "mnemonic": "inc",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x86": {
+    "mnemonic": "dec",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x87": {
+    "mnemonic": "print_addr",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x88": {
+    "mnemonic": "call_1s",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x89": {
+    "mnemonic": "remove_obj",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x8A": {
+    "mnemonic": "print_obj",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x8B": {
+    "mnemonic": "ret",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x8C": {
+    "mnemonic": "jump",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x8D": {
+    "mnemonic": "print_paddr",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x8E": {
+    "mnemonic": "load",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x8F": {
+    "mnemonic": "not",
+    "versions": [
+      1,
+      2,
+      3,
+      4
+    ]
+  },
+  "0x01": {
+    "mnemonic": "je",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x02": {
+    "mnemonic": "jl",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x03": {
+    "mnemonic": "jg",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x04": {
+    "mnemonic": "dec_chk",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x05": {
+    "mnemonic": "inc_chk",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x06": {
+    "mnemonic": "jin",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x07": {
+    "mnemonic": "test",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x08": {
+    "mnemonic": "or",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x09": {
+    "mnemonic": "and",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x0A": {
+    "mnemonic": "test_attr",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x0B": {
+    "mnemonic": "set_attr",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x0C": {
+    "mnemonic": "clear_attr",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x0D": {
+    "mnemonic": "store",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x0E": {
+    "mnemonic": "insert_obj",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x0F": {
+    "mnemonic": "loadw",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x10": {
+    "mnemonic": "loadb",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x11": {
+    "mnemonic": "get_prop",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x12": {
+    "mnemonic": "get_prop_addr",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x13": {
+    "mnemonic": "get_next_prop",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x14": {
+    "mnemonic": "add",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x15": {
+    "mnemonic": "sub",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x16": {
+    "mnemonic": "mul",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x17": {
+    "mnemonic": "div",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x18": {
+    "mnemonic": "mod",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x19": {
+    "mnemonic": "call_2s",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0xE0": {
+    "mnemonic": "call",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0xE1": {
+    "mnemonic": "storew",
+    "versions": [
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0xE2": {
+    "mnemonic": "storeb",
+    "versions": [
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0xE3": {
+    "mnemonic": "put_prop",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0xE4": {
+    "mnemonic": "aread",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0xE5": {
+    "mnemonic": "print_char",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0xE6": {
+    "mnemonic": "print_num",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0xE7": {
+    "mnemonic": "random",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0xE8": {
+    "mnemonic": "push",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0xE9": {
+    "mnemonic": "pull",
+    "versions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0xEA": {
+    "mnemonic": "split_window",
+    "versions": [
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0xEB": {
+    "mnemonic": "set_window",
+    "versions": [
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0xEC": {
+    "mnemonic": "call_vs",
+    "versions": [
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0xED": {
+    "mnemonic": "erase_window",
+    "versions": [
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0xEE": {
+    "mnemonic": "erase_line",
+    "versions": [
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0xEF": {
+    "mnemonic": "set_cursor",
+    "versions": [
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0xF0": {
+    "mnemonic": "get_cursor",
+    "versions": [
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0xF1": {
+    "mnemonic": "call_vn",
+    "versions": [
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0xF2": {
+    "mnemonic": "call_vn2",
+    "versions": [
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0xF3": {
+    "mnemonic": "tokenise",
+    "versions": [
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0xF4": {
+    "mnemonic": "encode_text",
+    "versions": [
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0xF5": {
+    "mnemonic": "copy_table",
+    "versions": [
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0xF6": {
+    "mnemonic": "print_table",
+    "versions": [
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0xF7": {
+    "mnemonic": "check_arg_count",
+    "versions": [
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "0x100": {
+    "mnemonic": "save",
+    "versions": [
+      5,
+      6,
+      7,
+      8
+    ],
+    "note": "EXT opcode (prefix 0xBE then byte index)"
+  },
+  "0x101": {
+    "mnemonic": "restore",
+    "versions": [
+      5,
+      6,
+      7,
+      8
+    ],
+    "note": "EXT opcode (prefix 0xBE then byte index)"
+  },
+  "0x102": {
+    "mnemonic": "log_shift",
+    "versions": [
+      5,
+      6,
+      7,
+      8
+    ],
+    "note": "EXT opcode (prefix 0xBE then byte index)"
+  },
+  "0x103": {
+    "mnemonic": "art_shift",
+    "versions": [
+      5,
+      6,
+      7,
+      8
+    ],
+    "note": "EXT opcode (prefix 0xBE then byte index)"
+  },
+  "0x104": {
+    "mnemonic": "set_font",
+    "versions": [
+      5,
+      6,
+      7,
+      8
+    ],
+    "note": "EXT opcode (prefix 0xBE then byte index)"
+  },
+  "0x105": {
+    "mnemonic": "draw_picture",
+    "versions": [
+      6
+    ],
+    "note": "EXT opcode (prefix 0xBE then byte index)"
+  },
+  "0x106": {
+    "mnemonic": "erase_picture",
+    "versions": [
+      6
+    ],
+    "note": "EXT opcode (prefix 0xBE then byte index)"
+  },
+  "0x107": {
+    "mnemonic": "set_margins",
+    "versions": [
+      6
+    ],
+    "note": "EXT opcode (prefix 0xBE then byte index)"
+  },
+  "0x108": {
+    "mnemonic": "save_undo",
+    "versions": [
+      5,
+      6,
+      7,
+      8
+    ],
+    "note": "EXT opcode (prefix 0xBE then byte index)"
+  },
+  "0x109": {
+    "mnemonic": "restore_undo",
+    "versions": [
+      5,
+      6,
+      7,
+      8
+    ],
+    "note": "EXT opcode (prefix 0xBE then byte index)"
+  },
+  "0x10A": {
+    "mnemonic": "print_unicode",
+    "versions": [
+      5,
+      6,
+      7,
+      8
+    ],
+    "note": "EXT opcode (prefix 0xBE then byte index)"
+  },
+  "0x10B": {
+    "mnemonic": "check_unicode",
+    "versions": [
+      5,
+      6,
+      7,
+      8
+    ],
+    "note": "EXT opcode (prefix 0xBE then byte index)"
+  },
+  "0x10C": {
+    "mnemonic": "sound_effect",
+    "versions": [
+      5,
+      6,
+      7,
+      8
+    ],
+    "note": "EXT opcode (prefix 0xBE then byte index)"
+  },
+  "0x10D": {
+    "mnemonic": "input_stream",
+    "versions": [
+      5,
+      6,
+      7,
+      8
+    ],
+    "note": "EXT opcode (prefix 0xBE then byte index)"
+  },
+  "0x10E": {
+    "mnemonic": "output_stream",
+    "versions": [
+      5,
+      6,
+      7,
+      8
+    ],
+    "note": "EXT opcode (prefix 0xBE then byte index)"
+  },
+  "0x10F": {
+    "mnemonic": "scroll_window",
+    "versions": [
+      6
+    ],
+    "note": "EXT opcode (prefix 0xBE then byte index)"
   }
 }

@@ -144,9 +144,10 @@ extension ZMachine {
             try storeResult(Int16(parentNumber))
 
         case 0x04: // GET_PROP_LEN
-            // Get length of property data
-            // Simplified: assume properties are 2 bytes
-            try storeResult(2)
+            // Get length of property data at given address
+            let address = UInt16(bitPattern: operand)
+            let length = objectTree.getPropertyLength(at: address)
+            try storeResult(Int16(length))
 
         case 0x05: // INC
             let variableNum = UInt8(operand & 0xFF) // Ensure positive value, variables are 0-255
@@ -164,7 +165,7 @@ extension ZMachine {
 
         case 0x08: // CALL_1S (v4+)
             if version.rawValue >= 4 {
-                let result = try callRoutine(UInt32(operand), arguments: [])
+                let result = try callRoutine(UInt32(UInt16(bitPattern: operand)), arguments: [])
                 try storeResult(result)
             } else {
                 throw RuntimeError.unsupportedOperation("CALL_1S in version \(version.rawValue)", location: SourceLocation.unknown)
@@ -185,9 +186,12 @@ extension ZMachine {
             try returnFromRoutine(value: operand)
 
         case 0x0C: // JUMP
-            // Signed 16-bit offset
-            let signedOffset = operand
-            programCounter = UInt32(Int32(programCounter) + Int32(signedOffset) - 2)
+            // Unconditional jump with signed 16-bit offset
+            // Offset is relative to the address of the first operand (PC + 1 from instruction start)
+            // Calculate from postDecodePC - operand_size + 1
+            let instructionStart = postDecodePC - 3  // JUMP is 3 bytes total (opcode + 2 byte operand)
+            let operandAddress = instructionStart + 1  // First operand is at instruction + 1
+            programCounter = UInt32(Int32(operandAddress) + Int32(operand))
 
         case 0x0D: // PRINT_PADDR
             // Print packed address string
@@ -206,7 +210,7 @@ extension ZMachine {
                 try storeResult(~operand)
             } else {
                 // CALL_1N - call routine and discard result
-                _ = try callRoutine(UInt32(operand), arguments: [])
+                _ = try callRoutine(UInt32(UInt16(bitPattern: operand)), arguments: [])
             }
 
         default:
@@ -306,13 +310,18 @@ extension ZMachine {
             try storeResult(Int16(bitPattern: propertyValue))
 
         case 0x12: // GET_PROP_ADDR
-            // Simplified: return a dummy address
-            try storeResult(0x1000)
+            // Get address of object property data
+            let objectNum = UInt16(bitPattern: operand1)
+            let propertyNum = UInt8(operand2 & 0xFF)
+            let address = objectTree.getPropertyAddress(objectNum, property: propertyNum)
+            try storeResult(Int16(bitPattern: address))
 
         case 0x13: // GET_NEXT_PROP
-            // Simplified: return next property number
-            let nextProp = operand2 == 0 ? 1 : max(0, operand2 - 1)
-            try storeResult(nextProp)
+            // Get next property number in object's property list
+            let objectNum = UInt16(bitPattern: operand1)
+            let currentProp = UInt8(operand2 & 0xFF)
+            let nextProp = objectTree.getNextProperty(objectNum, after: currentProp)
+            try storeResult(Int16(nextProp))
 
         case 0x14: // ADD
             try storeResult(operand1 + operand2)
@@ -337,7 +346,7 @@ extension ZMachine {
 
         case 0x19: // CALL_2S (v4+)
             if version.rawValue >= 4 {
-                let result = try callRoutine(UInt32(operand1), arguments: [operand2])
+                let result = try callRoutine(UInt32(UInt16(bitPattern: operand1)), arguments: [operand2])
                 try storeResult(result)
             } else {
                 throw RuntimeError.unsupportedOperation("CALL_2S in version \(version.rawValue)", location: SourceLocation.unknown)
@@ -345,7 +354,7 @@ extension ZMachine {
 
         case 0x1A: // CALL_2N (v5+)
             if version.rawValue >= 5 {
-                _ = try callRoutine(UInt32(operand1), arguments: [operand2])
+                _ = try callRoutine(UInt32(UInt16(bitPattern: operand1)), arguments: [operand2])
             } else {
                 throw RuntimeError.unsupportedOperation("CALL_2N in version \(version.rawValue)", location: SourceLocation.unknown)
             }
@@ -373,7 +382,7 @@ extension ZMachine {
         case 0x1E: // CALL_2S (alternate encoding, v4+)
             if version.rawValue >= 4 {
                 // This is an alternate encoding for CALL_2S with different operand format
-                let result = try callRoutine(UInt32(operand1), arguments: [operand2])
+                let result = try callRoutine(UInt32(UInt16(bitPattern: operand1)), arguments: [operand2])
                 try storeResult(result)
             } else {
                 throw RuntimeError.unsupportedOperation("CALL_2S (0x1E) in version \(version.rawValue)", location: SourceLocation.unknown)
@@ -382,7 +391,7 @@ extension ZMachine {
         case 0x1F: // CALL_2N (alternate encoding, v5+)
             if version.rawValue >= 5 {
                 // This is an alternate encoding for CALL_2N with different operand format
-                _ = try callRoutine(UInt32(operand1), arguments: [operand2])
+                _ = try callRoutine(UInt32(UInt16(bitPattern: operand1)), arguments: [operand2])
             } else {
                 throw RuntimeError.unsupportedOperation("CALL_2N (0x1F) in version \(version.rawValue)", location: SourceLocation.unknown)
             }
@@ -531,22 +540,26 @@ extension ZMachine {
             }
             let objectNum = UInt16(bitPattern: operands[0])
             let propertyNum = UInt8(operands[1] & 0xFF)
-            print("DEBUG: GET_PROP (VAR form) instruction - object=\(objectNum), property=\(propertyNum)")
             let propertyValue = objectTree.getProperty(objectNum, property: propertyNum)
-            print("DEBUG: GET_PROP (VAR form) - got property value \(propertyValue) (0x\(String(propertyValue, radix: 16, uppercase: true)))")
             try storeResult(Int16(bitPattern: propertyValue))
 
         case 0x12: // GET_PROP_ADDR - VAR form
-            // Simplified: return a dummy address
-            try storeResult(0x1000)
+            guard operands.count >= 2 else {
+                throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
+            }
+            let objectNum = UInt16(bitPattern: operands[0])
+            let propertyNum = UInt8(operands[1] & 0xFF)
+            let address = objectTree.getPropertyAddress(objectNum, property: propertyNum)
+            try storeResult(Int16(bitPattern: address))
 
         case 0x13: // GET_NEXT_PROP - VAR form
             guard operands.count >= 2 else {
                 throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
             }
-            // Simplified: return next property number
-            let nextProp = operands[1] == 0 ? 1 : max(0, operands[1] - 1)
-            try storeResult(nextProp)
+            let objectNum = UInt16(bitPattern: operands[0])
+            let currentProp = UInt8(operands[1] & 0xFF)
+            let nextProp = objectTree.getNextProperty(objectNum, after: currentProp)
+            try storeResult(Int16(nextProp))
 
         case 0x14: // ADD - VAR form
             guard operands.count >= 2 else {
@@ -589,7 +602,7 @@ extension ZMachine {
                 throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
             }
             if version.rawValue >= 4 {
-                let result = try callRoutine(UInt32(operands[0]), arguments: [operands[1]])
+                let result = try callRoutine(UInt32(UInt16(bitPattern: operands[0])), arguments: [operands[1]])
                 try storeResult(result)
             } else {
                 throw RuntimeError.unsupportedOperation("CALL_2S in version \(version.rawValue)", location: SourceLocation.unknown)
@@ -600,7 +613,7 @@ extension ZMachine {
                 throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
             }
             if version.rawValue >= 5 {
-                _ = try callRoutine(UInt32(operands[0]), arguments: [operands[1]])
+                _ = try callRoutine(UInt32(UInt16(bitPattern: operands[0])), arguments: [operands[1]])
             } else {
                 throw RuntimeError.unsupportedOperation("CALL_2N in version \(version.rawValue)", location: SourceLocation.unknown)
             }
@@ -708,15 +721,19 @@ extension ZMachine {
                 throw RuntimeError.invalidMemoryAccess(Int(programCounter), location: SourceLocation.unknown)
             }
 
-            let routineAddress = UInt32(operands[0])
+            // Treat routine address as unsigned even if operand is signed
+            let routineAddress = UInt32(UInt16(bitPattern: operands[0]))
             let arguments = Array(operands.dropFirst())
-            let result = try callRoutine(routineAddress, arguments: arguments)
 
-            if version.rawValue >= 4 {
-                try storeResult(result)
-            } else {
-                // v1-3: result is discarded
-            }
+            // CALL always stores result in all versions (v1-v8)
+            // Read store variable byte and advance PC to next instruction (return address)
+            let storeVariable = try readByte(at: programCounter)
+            programCounter += 1  // PC now points to next instruction (return address)
+            postDecodePC = programCounter  // Save for tracing
+
+            _ = try callRoutine(routineAddress, arguments: arguments, storeVariable: storeVariable)
+
+            // Result storage is handled by returnFromRoutine using saved store variable
 
         case 0x01: // STOREW
             guard operands.count >= 3 else {
@@ -779,17 +796,7 @@ extension ZMachine {
             }
 
             let range = operands[0]
-            let result: Int16
-
-            if range > 0 {
-                result = Int16.random(in: 1...range)
-            } else if range < 0 {
-                // Seed random number generator
-                result = 0
-            } else {
-                result = 0
-            }
-
+            let result = generateRandom(range)
             try storeResult(result)
 
         case 0x08: // PUSH

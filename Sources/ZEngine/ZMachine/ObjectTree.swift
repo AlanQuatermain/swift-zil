@@ -18,6 +18,12 @@ public class ObjectTree {
     /// Version-specific object structure
     private var version: ZMachineVersion = .v3
 
+    /// Memory data containing the object table and properties
+    private var memoryData: Data = Data()
+
+    /// Base address of static memory for address calculations
+    private var staticMemoryBase: UInt32 = 0
+
     public init() {}
 
     /// Load object tree from Z-Machine memory
@@ -31,6 +37,8 @@ public class ObjectTree {
     /// - Throws: RuntimeError for corrupted object table
     public func load(from data: Data, version: ZMachineVersion, objectTableAddress: UInt32, staticMemoryBase: UInt32, dictionaryAddress: UInt32? = nil) throws {
         self.version = version
+        self.memoryData = data
+        self.staticMemoryBase = staticMemoryBase
         objects.removeAll()
         propertyDefaults.removeAll()
 
@@ -144,18 +152,10 @@ public class ObjectTree {
     /// - Returns: True if attribute is set
     public func getAttribute(_ objectNumber: UInt16, attribute: UInt8) -> Bool {
         guard let object = objects[objectNumber] else {
-            print("DEBUG: getAttribute(\(objectNumber), \(attribute)) - object not found")
             return false
         }
 
-        // Debug: Show object's raw attribute data
-        print("DEBUG: getAttribute(\(objectNumber), \(attribute))")
-        print("  Object \(objectNumber) raw attributes: 0x\(String(object.attributes, radix: 16, uppercase: true))")
-        print("  Z-Machine version: \(version.rawValue)")
-        print("  Max attributes for v\(version.rawValue): \(version.rawValue >= 4 ? 47 : 31)")
-
         let result = object.hasAttribute(attribute)
-        print("  hasAttribute(\(attribute)) result: \(result)")
         return result
     }
 
@@ -167,23 +167,14 @@ public class ObjectTree {
     ///   - value: True to set, false to clear
     /// - Throws: RuntimeError for invalid object or attribute numbers
     public func setAttribute(_ objectNumber: UInt16, attribute: UInt8, value: Bool) throws {
-        // Add detailed logging for object access attempts
-        if objectNumber > 200 {
-            print("WARNING: Attempting to set attribute on object \(objectNumber) (attribute=\(attribute), value=\(value))")
-            print("  Call stack trace would be helpful here")
-        }
-
         guard var object = objects[objectNumber] else {
-            print("ERROR: Invalid object access: object \(objectNumber) does not exist")
-            print("  Valid object range: 1-\(objects.keys.max() ?? 0)")
-            print("  Attempted operation: setAttribute(attribute=\(attribute), value=\(value))")
             throw RuntimeError.invalidObjectAccess(Int(objectNumber), location: SourceLocation.unknown)
         }
 
         // Validate attribute number range
         let maxAttribute = version.rawValue >= 4 ? 47 : 31
         guard attribute <= maxAttribute else {
-            throw RuntimeError.unsupportedOperation("Attribute \\(attribute) out of valid range 0-\\(maxAttribute) for Z-Machine version \\(version.rawValue)", location: SourceLocation.unknown)
+            throw RuntimeError.unsupportedOperation("Attribute \(attribute) out of valid range 0-\(maxAttribute) for Z-Machine version \(version.rawValue)", location: SourceLocation.unknown)
         }
 
         object.setAttribute(attribute, value: value)
@@ -218,11 +209,6 @@ public class ObjectTree {
     /// - Throws: RuntimeError for invalid object or property numbers
     public func setProperty(_ objectNumber: UInt16, property: UInt8, value: UInt16) throws {
         guard var object = objects[objectNumber] else {
-            print("ERROR: Invalid object access: object \(objectNumber) does not exist")
-            print("  Valid object range: 1-\(objects.keys.max() ?? 0)")
-            print("  Attempted operation: setProperty(property=\(property), value=\(value))")
-            print("  ZIP COMPARISON: ZIP interpreter would access memory at calculated offset without bounds checking")
-            print("  This suggests the story file may have a bug or we missed objects during loading")
             throw RuntimeError.invalidObjectAccess(Int(objectNumber), location: SourceLocation.unknown)
         }
 
@@ -243,24 +229,13 @@ public class ObjectTree {
     ///   - newParent: New parent object (0 for no parent)
     /// - Throws: RuntimeError for invalid object references
     public func moveObject(_ objectNumber: UInt16, toParent newParent: UInt16) throws {
-        // Add detailed logging for object access attempts
-        if objectNumber > 200 || newParent > 200 {
-            print("WARNING: Attempting to move object \(objectNumber) to parent \(newParent)")
-        }
-
         guard var object = objects[objectNumber] else {
-            print("ERROR: Invalid object access: object \(objectNumber) does not exist")
-            print("  Valid object range: 1-\(objects.keys.max() ?? 0)")
-            print("  Attempted operation: moveObject(toParent=\(newParent))")
             throw RuntimeError.invalidObjectAccess(Int(objectNumber), location: SourceLocation.unknown)
         }
 
         // Validate new parent exists if not 0
         if newParent != 0 {
             guard objects[newParent] != nil else {
-                print("ERROR: Invalid parent object access: object \(newParent) does not exist")
-                print("  Valid object range: 1-\(objects.keys.max() ?? 0)")
-                print("  Attempted operation: moveObject(\(objectNumber), toParent=\(newParent))")
                 throw RuntimeError.invalidObjectAccess(Int(newParent), location: SourceLocation.unknown)
             }
         }
@@ -339,6 +314,182 @@ public class ObjectTree {
         updatedObject.parent = 0
         updatedObject.sibling = 0
         objects[objectNumber] = updatedObject
+    }
+
+    /// Get the address of a property's data (not the size byte)
+    ///
+    /// - Parameters:
+    ///   - objectNumber: Object number
+    ///   - property: Property number (1-63)
+    /// - Returns: Address of property data, or 0 if property doesn't exist
+    public func getPropertyAddress(_ objectNumber: UInt16, property: UInt8) -> UInt16 {
+        guard let object = objects[objectNumber] else { return 0 }
+        guard property > 0 else { return 0 }
+
+        let tableAddress = Int(object.propertyTableAddress)
+        guard tableAddress < memoryData.count else { return 0 }
+
+        return findPropertyAddress(property: property, tableAddress: tableAddress) ?? 0
+    }
+
+    /// Get the length of a property at a given address
+    ///
+    /// - Parameter address: Address pointing to property data
+    /// - Returns: Length of property in bytes, or 0 if address is invalid
+    public func getPropertyLength(at address: UInt16) -> UInt8 {
+        guard address > 0 else { return 0 }
+
+        // Find the size byte(s) that precede this address
+        // We need to find which object this property belongs to and walk back to the size byte
+        return calculatePropertyLengthAtAddress(address)
+    }
+
+    /// Get the next property number after the given property
+    ///
+    /// - Parameters:
+    ///   - objectNumber: Object number
+    ///   - currentProperty: Current property number (0 to get first property)
+    /// - Returns: Next property number, or 0 if at end
+    public func getNextProperty(_ objectNumber: UInt16, after currentProperty: UInt8) -> UInt8 {
+        guard let object = objects[objectNumber] else { return 0 }
+
+        let tableAddress = Int(object.propertyTableAddress)
+        guard tableAddress < memoryData.count else { return 0 }
+
+        return findNextProperty(tableAddress: tableAddress, after: currentProperty)
+    }
+
+    // MARK: - Private Helper Methods
+
+    private func findPropertyAddress(property: UInt8, tableAddress: Int) -> UInt16? {
+        var offset = tableAddress
+
+        // Skip object short name (text length byte + encoded text)
+        guard offset < memoryData.count else { return nil }
+        let textLength = memoryData[offset]
+        offset += 1 + Int(textLength) * 2 // Skip length byte + text words (2 bytes each)
+
+        // Walk through properties to find the one we want
+        while offset < memoryData.count {
+            let header = memoryData[offset]
+
+            // Check for end marker
+            if header == 0 { break }
+
+            let (propertyNumber, propertySize, headerSize) = decodePropertyHeader(header, offset: offset)
+
+            if propertyNumber == property {
+                // Return address of property data (skip header bytes)
+                return UInt16(offset + headerSize)
+            }
+
+            // Move to next property
+            offset += headerSize + propertySize
+        }
+
+        return nil
+    }
+
+    private func calculatePropertyLengthAtAddress(_ address: UInt16) -> UInt8 {
+        // This is complex - we need to find the size byte(s) that precede this address
+        // For now, we'll search through all objects to find which property this address belongs to
+
+        for object in objects.values {
+            let tableAddress = Int(object.propertyTableAddress)
+            guard tableAddress < memoryData.count else { continue }
+
+            var offset = tableAddress
+
+            // Skip object short name
+            guard offset < memoryData.count else { continue }
+            let textLength = memoryData[offset]
+            offset += 1 + Int(textLength) * 2
+
+            // Walk through properties
+            while offset < memoryData.count {
+                let header = memoryData[offset]
+
+                // Check for end marker
+                if header == 0 { break }
+
+                let (_, propertySize, headerSize) = decodePropertyHeader(header, offset: offset)
+                let dataAddress = offset + headerSize
+
+                if UInt16(dataAddress) == address {
+                    return UInt8(propertySize)
+                }
+
+                offset += headerSize + propertySize
+            }
+        }
+
+        return 0
+    }
+
+    private func findNextProperty(tableAddress: Int, after currentProperty: UInt8) -> UInt8 {
+        var offset = tableAddress
+
+        // Skip object short name
+        guard offset < memoryData.count else { return 0 }
+        let textLength = memoryData[offset]
+        offset += 1 + Int(textLength) * 2
+
+        var foundCurrent = currentProperty == 0 // If 0, we want the first property
+
+        // Walk through properties (they are in descending order)
+        while offset < memoryData.count {
+            let header = memoryData[offset]
+
+            // Check for end marker
+            if header == 0 { break }
+
+            let (propertyNumber, propertySize, headerSize) = decodePropertyHeader(header, offset: offset)
+
+            if foundCurrent {
+                return propertyNumber
+            }
+
+            if propertyNumber == currentProperty {
+                foundCurrent = true
+            }
+
+            offset += headerSize + propertySize
+        }
+
+        return 0
+    }
+
+    private func decodePropertyHeader(_ header: UInt8, offset: Int) -> (propertyNumber: UInt8, propertySize: Int, headerSize: Int) {
+        if version.rawValue >= 4 {
+            // Version 4+ property format
+            if (header & 0x80) != 0 {
+                // Long format: TWO header bytes
+                let propertyNumber = header & 0x3F
+
+                guard offset + 1 < memoryData.count else {
+                    return (propertyNumber, 1, 2) // Fallback
+                }
+                let lengthByte = memoryData[offset + 1]
+                let sizeField = lengthByte & 0x3F
+                let propertySize = sizeField == 0 ? 64 : Int(sizeField)
+
+                return (propertyNumber, propertySize, 2)
+            } else {
+                // Short format: ONE header byte
+                let propertyNumber = header & 0x3F
+                let lengthFlag = (header & 0x40) != 0
+                let propertySize = lengthFlag ? 2 : 1
+
+                return (propertyNumber, propertySize, 1)
+            }
+        } else {
+            // Version 3 property format: LLLL PPPP
+            let propertyNumber = header & 0x1F
+            let sizeField = (header >> 5) & 0x07
+            let propertySize = Int(sizeField) + 1
+
+            return (propertyNumber, propertySize, 1)
+        }
     }
 }
 
@@ -570,9 +721,25 @@ public struct ObjectEntry {
         let maxAttribute = version.rawValue >= 4 ? 47 : 31
         guard attribute <= maxAttribute else { return false }
 
-        let bitPosition = UInt64(attribute)
-        // Ensure bit position is within UInt64 range (0-63)
-        guard bitPosition < 64 else { return false }
+        // Z-Machine uses word-based bit ordering with big-endian word layout:
+        // Word 0 (attributes 0-15) is at higher address positions in the UInt64
+        // Word 1 (attributes 16-31) is at lower address positions in the UInt64
+        // Word 2 (attributes 32-47) is at lowest address positions in the UInt64
+        let wordIndex = Int(attribute / 16)
+        let attributeInWord = attribute % 16
+        let bitInWord = 15 - Int(attributeInWord)  // MSB-first within each word
+
+        // For big-endian word layout: word 0 goes in high bits, word 1 in middle, word 2 in low
+        let bitPosition: Int
+        if version.rawValue >= 4 {
+            // v4+: 3 words (48 bits), need to map to high 48 bits of UInt64
+            bitPosition = (47 - (wordIndex * 16 + (15 - bitInWord)))
+        } else {
+            // v3: 2 words (32 bits), need to map to high 32 bits of UInt64
+            bitPosition = (31 - (wordIndex * 16 + (15 - bitInWord)))
+        }
+
+        guard bitPosition >= 0 && bitPosition < 64 else { return false }
         return (attributes & (UInt64(1) << bitPosition)) != 0
     }
 
@@ -585,9 +752,25 @@ public struct ObjectEntry {
         let maxAttribute = version.rawValue >= 4 ? 47 : 31
         guard attribute <= maxAttribute else { return }
 
-        let bitPosition = UInt64(attribute)
-        // Ensure bit position is within UInt64 range (0-63)
-        guard bitPosition < 64 else { return }
+        // Z-Machine uses word-based bit ordering with big-endian word layout:
+        // Word 0 (attributes 0-15) is at higher address positions in the UInt64
+        // Word 1 (attributes 16-31) is at lower address positions in the UInt64
+        // Word 2 (attributes 32-47) is at lowest address positions in the UInt64
+        let wordIndex = Int(attribute / 16)
+        let attributeInWord = attribute % 16
+        let bitInWord = 15 - Int(attributeInWord)  // MSB-first within each word
+
+        // For big-endian word layout: word 0 goes in high bits, word 1 in middle, word 2 in low
+        let bitPosition: Int
+        if version.rawValue >= 4 {
+            // v4+: 3 words (48 bits), need to map to high 48 bits of UInt64
+            bitPosition = (47 - (wordIndex * 16 + (15 - bitInWord)))
+        } else {
+            // v3: 2 words (32 bits), need to map to high 32 bits of UInt64
+            bitPosition = (31 - (wordIndex * 16 + (15 - bitInWord)))
+        }
+
+        guard bitPosition >= 0 && bitPosition < 64 else { return }
 
         if value {
             attributes |= (UInt64(1) << bitPosition)

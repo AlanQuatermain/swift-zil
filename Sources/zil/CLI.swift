@@ -821,7 +821,15 @@ struct AnalyzeCommand: ParsableCommand {
 class CLIInputDelegate: TextInputDelegate {
     func requestInput() -> String {
         print("> ", terminator: "")
-        return readLine() ?? ""
+
+        // Check if stdin is available and read input
+        if let input = readLine() {
+            return input
+        } else {
+            // EOF detected (stdin closed) - exit gracefully
+            print("\n[Input stream closed - terminating]")
+            exit(0)
+        }
     }
 
     func requestInputWithTimeout(timeLimit: TimeInterval) -> (input: String?, timedOut: Bool) {

@@ -1,137 +1,169 @@
-# Z-Machine Opcodes Reference
+# Z‑Machine Opcodes — Corrected Reference
 
-This document lists the complete set of Z-Machine opcodes, their **mnemonics**, and their **semantics** (what the VM should do).  
-Instructions are grouped by operand count/type (0OP, 1OP, 2OP, VAR, EXT).
-
----
-
-## 0OP Instructions (no operands)
-
-| Mnemonic | Purpose |
-|----------|---------|
-| `RTRUE` | Return from routine with value `true` (1). |
-| `RFALSE` | Return from routine with value `false` (0). |
-| `PRINT` | Print a literal Z-string embedded in the instruction stream. |
-| `PRINT_RET` | Print a Z-string, then return `true`. |
-| `NOP` | No operation (does nothing). |
-| `RESTART` | Restart the game (reinitialize memory). |
-| `RET_POPPED` | Return from routine with the top value popped from the evaluation stack. |
-| `CATCH` | Push the current stack frame identifier for later use with `THROW`. |
-| `QUIT` | Terminate the interpreter/game session. |
-| `NEW_LINE` | Print a newline character. |
-| `VERIFY` | Perform checksum validation of story file, set branch accordingly. |
+This file lists **all Z‑Machine opcodes** by actual byte value (0x00–0xFF) and by extended tables.  
+It integrates the corrected mapping, so that confusing cases (e.g. 0xC1 vs 0xE1) are accurate.
 
 ---
 
-## 1OP Instructions (one operand)
+## Decoding Summary
 
-| Mnemonic | Purpose |
-|----------|---------|
-| `JZ a` | Branch if operand `a` equals 0. |
-| `GET_SIBLING obj -> (result)` | Store sibling of `obj` in result, branch if sibling exists. |
-| `GET_CHILD obj -> (result)` | Store first child of `obj` in result, branch if child exists. |
-| `GET_PARENT obj -> (result)` | Store parent of `obj`. |
-| `GET_PROP_LEN addr -> (result)` | Read property length at given address. |
-| `INC var` | Increment variable. |
-| `DEC var` | Decrement variable. |
-| `PRINT_ADDR addr` | Print the Z-string at memory address `addr`. |
-| `CALL_1S routine -> (result)` | Call routine with 1 operand, store result. |
-| `REMOVE_OBJ obj` | Unlink object from parent/sibling tree. |
-| `PRINT_OBJ obj` | Print the short name of object. |
-| `RET value` | Return from routine with value. |
-| `JUMP offset` | Branch unconditionally by signed offset. |
-| `PRINT_PADDR packedAddr` | Print Z-string at packed address. |
-| `LOAD var -> (result)` | Load variable’s value. |
-| `NOT value -> (result)` | Bitwise NOT (in V5+). |
+- **00–7F** → 2OP form (long)  
+- **80–9F** → 1OP form (short)  
+- **A0–AF** → 0OP form (short)  
+- **B0–BF** → 0OP/1OP continuation (see table)  
+- **C0–DF** → VAR form re‑encoding of 2OP:0–31 (with type byte)  
+- **E0–FF** → VAR instructions (main VAR table)  
+- **BE** → EXT prefix (followed by an extra byte indexing the EXT table)
+
+Key corrections:
+
+- `0xC1` = VAR form of 2OP:1 (`je`), not `storew`.  
+- `0xE1` = `storew`.  
+- `not` is `0x8F` in V1–4, then moves to `0xF8` in V5/6.  
+- `call_1n` (1OP:0x8F) appears in V5+.  
+- `call_2n` (2OP:0x1A) appears in V5+.  
+- Early V1–2 had `pop` at 0xB9, replaced by `new_line` in V2+.  
 
 ---
 
-## 2OP Instructions (two operands)
+## 2OP (0x00–0x7F)
 
-| Mnemonic | Purpose |
-|----------|---------|
-| `JE a b [c d]` | Branch if `a` = any of `b`, `c`, or `d`. |
-| `JL a b` | Branch if `a` < `b` (signed). |
-| `JG a b` | Branch if `a` > `b` (signed). |
-| `DEC_CHK var value` | Decrement `var`; branch if new value < `value`. |
-| `INC_CHK var value` | Increment `var`; branch if new value > `value`. |
-| `JIN obj1 obj2` | Branch if `obj1` is contained in `obj2`. |
-| `TEST bitmap flags` | Branch if all bits in `flags` are set in `bitmap`. |
-| `OR a b -> (result)` | Bitwise OR. |
-| `AND a b -> (result)` | Bitwise AND. |
-| `TEST_ATTR obj attr` | Branch if object has attribute. |
-| `SET_ATTR obj attr` | Set attribute bit. |
-| `CLEAR_ATTR obj attr` | Clear attribute bit. |
-| `STORE var value` | Assign value to variable. |
-| `INSERT_OBJ obj dest` | Move `obj` under `dest` in object tree. |
-| `LOADW array index -> (result)` | Load word from `array[index]`. |
-| `LOADB array index -> (result)` | Load byte from `array[index]`. |
-| `GET_PROP obj prop -> (result)` | Fetch object property value. |
-| `GET_PROP_ADDR obj prop -> (result)` | Get address of object property. |
-| `GET_NEXT_PROP obj prop -> (result)` | Get next property ID after `prop`. |
-| `ADD a b -> (result)` | Signed addition. |
-| `SUB a b -> (result)` | Signed subtraction. |
-| `MUL a b -> (result)` | Signed multiplication. |
-| `DIV a b -> (result)` | Signed division. |
-| `MOD a b -> (result)` | Signed modulus. |
-| `CALL_2S routine arg1 -> (result)` | Call routine with 2 arguments, store result. |
-
----
-
-## VAR Instructions (variable operand count)
-
-| Mnemonic | Purpose |
-|----------|---------|
-| `CALL routine [args...] -> (result)` | Call routine with 0–3 arguments. |
-| `CALL_VS routine [args...] -> (result)` | Call routine with up to 3 args (V4+). |
-| `CALL_VN routine [args...]` | Same as above, but discard result. |
-| `CALL_VN2 routine [args...]` | Variant for extended ranges. |
-| `AREAD text parse time result` | Read input line, tokenize into buffers. |
-| `PRINT_CHAR ch` | Print character. |
-| `PRINT_NUM value` | Print signed number in decimal. |
-| `RANDOM range -> (result)` | Random number (0 = re-seed). |
-| `PUSH value` | Push value onto evaluation stack. |
-| `POP var` | Pop from stack into variable. |
-| `PULL var` | Opposite of `PUSH`: pop into variable. |
-| `CHECK_ARG_COUNT count` | Branch if routine was called with ≥ count args. |
+| Byte | Mnemonic     | Versions |
+|------|--------------|----------|
+| 0x01 | je           | 1–8      |
+| 0x02 | jl           | 1–8      |
+| 0x03 | jg           | 1–8      |
+| 0x04 | dec_chk      | 1–8      |
+| 0x05 | inc_chk      | 1–8      |
+| 0x06 | jin          | 1–8      |
+| 0x07 | test         | 1–8      |
+| 0x08 | or           | 1–8      |
+| 0x09 | and          | 1–8      |
+| 0x0A | test_attr    | 1–8      |
+| 0x0B | set_attr     | 1–8      |
+| 0x0C | clear_attr   | 1–8      |
+| 0x0D | store        | 1–8      |
+| 0x0E | insert_obj   | 1–8      |
+| 0x0F | loadw        | 1–8      |
+| 0x10 | loadb        | 1–8      |
+| 0x11 | get_prop     | 1–8      |
+| 0x12 | get_prop_addr| 1–8      |
+| 0x13 | get_next_prop| 1–8      |
+| 0x14 | add          | 1–8      |
+| 0x15 | sub          | 1–8      |
+| 0x16 | mul          | 1–8      |
+| 0x17 | div          | 1–8      |
+| 0x18 | mod          | 1–8      |
+| 0x19 | call_2s      | 4–8      |
+| 0x1A | call_2n      | 5–8      |
+| 0x1B | set_colour   | 5–6      |
+| 0x1C | throw        | 5–6      |
 
 ---
 
-## EXT Instructions (Extended set, V5+)
+## 1OP (0x80–0x9F)
 
-| Mnemonic | Purpose |
-|----------|---------|
-| `SAVE` | Save game state (to file/stream or memory). |
-| `RESTORE` | Restore game state. |
-| `LOG_SHIFT a b -> (result)` | Logical shift left/right. |
-| `ART_SHIFT a b -> (result)` | Arithmetic shift left/right. |
-| `SET_FONT font -> (result)` | Set output font (V6). |
-| `DRAW_PICTURE pic x y` | Display picture (V6). |
-| `ERASE_PICTURE pic` | Erase picture (V6). |
-| `SET_MARGINS left right` | Adjust text margins. |
-| `SAVE_UNDO -> (result)` | Save undo snapshot. |
-| `RESTORE_UNDO -> (result)` | Restore undo snapshot. |
-| `CATCH` | Frame capture (same as 0OP). |
-| `THROW value frame` | Unwind stack to frame, return value. |
-| `SOUND_EFFECT n` | Play sound effect. |
-| `INPUT_STREAM n` | Select input stream. |
-| `OUTPUT_STREAM n` | Select output stream. |
-| `SCROLL_WINDOW lines` | Scroll window (V6). |
-| `BUFFER_MODE flag` | Switch input buffer behavior. |
-| `READ_CHAR time routine -> (result)` | Read a single keystroke. |
-| `SCAN_TABLE x table len form -> (result)` | Search table. |
-| `NOT value -> (result)` | Bitwise NOT (moved here in some versions). |
-| `COPY_TABLE src dst size` | Copy memory between tables. |
-| `PRINT_TABLE addr width height skip` | Print character table. |
-| `CHECK_UNICODE ch -> (result)` | Check Unicode support. |
-| `PRINT_UNICODE ch` | Print Unicode character. |
+| Byte | Mnemonic     | Versions |
+|------|--------------|----------|
+| 0x80 | jz           | 1–8      |
+| 0x81 | get_sibling  | 1–8      |
+| 0x82 | get_child    | 1–8      |
+| 0x83 | get_parent   | 1–8      |
+| 0x84 | get_prop_len | 1–8      |
+| 0x85 | inc          | 1–8      |
+| 0x86 | dec          | 1–8      |
+| 0x87 | print_addr   | 1–8      |
+| 0x88 | call_1s      | 1–8      |
+| 0x89 | remove_obj   | 1–8      |
+| 0x8A | print_obj    | 1–8      |
+| 0x8B | ret          | 1–8      |
+| 0x8C | jump         | 1–8      |
+| 0x8D | print_paddr  | 1–8      |
+| 0x8E | load         | 1–8      |
+| 0x8F | not (V1–4) / call_1n (V5+) | — |
 
 ---
 
-# 🔍 Notes
+## 0OP (0xB0–0xBF)
 
-- Branching instructions all follow the same convention: the instruction encodes a **branch offset** and whether to branch if true/false.
-- The **stack**: local variables are accessed via var numbers; `SP` stack is used for temps.
-- **Calls**: A “routine” is just a packed address in memory that contains local variable count + bytecode. Results go to a variable if specified.
-- **Object tree**: objects form a linked tree with parent/child/sibling links and property tables.
-- **I/O**: text output goes through the VM’s stream system; input is tokenized via the dictionary.
+| Byte | Mnemonic        | Versions |
+|------|-----------------|----------|
+| 0xB0 | rtrue           | 1–8      |
+| 0xB1 | rfalse          | 1–8      |
+| 0xB2 | print           | 1–8      |
+| 0xB3 | print_ret       | 1–8      |
+| 0xB4 | nop             | 3–8      |
+| 0xB5 | restart         | 1–8      |
+| 0xB6 | ret_popped      | 1–8      |
+| 0xB7 | catch           | 5–6      |
+| 0xB8 | quit            | 1–8      |
+| 0xB9 | pop (V1) / new_line (V2+) | — |
+| 0xBA | show_status (V1) / verify (V3+) | — |
+| 0xBF | piracy          | 5        |
+
+---
+
+## VAR (0xE0–0xFF)
+
+| Byte | Mnemonic       | Versions |
+|------|----------------|----------|
+| 0xE0 | call           | 1–8      |
+| 0xE1 | storew         | 4–8      |
+| 0xE2 | storeb         | 4–8      |
+| 0xE3 | put_prop       | 1–8      |
+| 0xE4 | sread (V1–3) / aread (V5+) | — |
+| 0xE5 | print_char     | 1–8      |
+| 0xE6 | print_num      | 1–8      |
+| 0xE7 | random         | 1–8      |
+| 0xE8 | push           | 1–8      |
+| 0xE9 | pull           | 1–8      |
+| 0xEA | split_window   | 3–8      |
+| 0xEB | set_window     | 3–8      |
+| 0xEC | call_vs        | 4–8      |
+| 0xED | erase_window   | 4–8      |
+| 0xEE | erase_line     | 4–8      |
+| 0xEF | set_cursor     | 4–8      |
+| 0xF0 | get_cursor     | 4,6      |
+| 0xF1 | call_vn        | 5–8      |
+| 0xF2 | call_vn2       | 5–8      |
+| 0xF3 | tokenise       | 5–8      |
+| 0xF4 | encode_text    | 5–8      |
+| 0xF5 | copy_table     | 5–8      |
+| 0xF6 | print_table    | 5–8      |
+| 0xF7 | check_arg_count| 5–8      |
+| 0xF8 | not (moved)    | 5–6      |
+
+---
+
+## EXT (0xBE prefix)
+
+| Index | Mnemonic       | Versions |
+|-------|----------------|----------|
+| 0x00  | save           | 5–8      |
+| 0x01  | restore        | 5–8      |
+| 0x02  | log_shift      | 5–8      |
+| 0x03  | art_shift      | 5–8      |
+| 0x04  | set_font       | 5–6      |
+| 0x05  | draw_picture   | 6        |
+| 0x06  | picture_data   | 6        |
+| 0x07  | erase_picture  | 6        |
+| 0x08  | set_margins    | 6        |
+| 0x09  | save_undo      | 5–8      |
+| 0x0A  | restore_undo   | 5–8      |
+| 0x0B  | print_unicode  | 5+       |
+| 0x0C  | check_unicode  | 5+       |
+| 0x0D  | set_true_colour| 5/6      |
+| 0x10  | move_window    | 6        |
+| 0x11  | window_size    | 6        |
+| 0x12  | window_style   | 6        |
+| 0x13  | get_wind_prop  | 6        |
+| 0x14  | scroll_window  | 6        |
+| 0x15  | pop_stack      | 6        |
+| 0x16  | read_mouse     | 6        |
+| 0x17  | mouse_window   | 6        |
+| 0x18  | push_stack     | 6        |
+| 0x19  | put_wind_prop  | 6        |
+| 0x1A  | print_form     | 6        |
+| 0x1B  | make_menu      | 6        |
+| 0x1C  | picture_table  | 6        |
+| 0x1D  | buffer_screen  | 6        |

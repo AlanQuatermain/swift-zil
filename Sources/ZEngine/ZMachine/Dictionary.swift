@@ -118,19 +118,13 @@ public class Dictionary {
     public func lookup(_ word: String) -> DictionaryEntry? {
         let encodedWord = encodeWord(word)
 
-        // Debug: Print what we encoded vs what's in dictionary
-        print("DEBUG: Encoded '\(word)' as: \(encodedWord.map { String(format: "%02X", $0) }.joined(separator: " "))")
-
         if let entry = entries[encodedWord] {
-            print("DEBUG: Found exact match")
             return entry
         } else {
-            print("DEBUG: No exact match. Looking for similar entries...")
             // Look for entries that decode to this word
             for (data, entry) in entries {
                 let decoded = entry.decodeWord()
                 if decoded == word.lowercased() {
-                    print("DEBUG: Found matching decoded word '\(decoded)' with encoding: \(data.map { String(format: "%02X", $0) }.joined(separator: " "))")
                     return entry
                 }
             }

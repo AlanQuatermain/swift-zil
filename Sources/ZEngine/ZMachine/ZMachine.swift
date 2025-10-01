@@ -62,6 +62,9 @@ public class ZMachine {
     /// Evaluation stack for computations
     public internal(set) var evaluationStack: [Int16] = []
 
+    /// Random number generator with seed support
+    private var randomGenerator: SeededRandomGenerator = SeededRandomGenerator()
+
     /// Global variables (240 words)
     internal var globals: [UInt16] = Array(repeating: 0, count: 240)
 
@@ -193,6 +196,194 @@ public class ZMachine {
         currentInstruction?.type = type
     }
 
+    /// Get the mnemonic for an opcode based on its type and value
+    private func getMnemonic(opcode: UInt8, type: String) -> String {
+        switch type {
+        case "0OP":
+            switch opcode {
+            case 0xB0: return "RTRUE"
+            case 0xB1: return "RFALSE"
+            case 0xB2: return "PRINT"
+            case 0xB3: return "PRINT_RET"
+            case 0xB4: return "NOP"
+            case 0xB5: return "SAVE"
+            case 0xB6: return "RESTORE"
+            case 0xB7: return "RESTART"
+            case 0xB8: return "RET_POPPED"
+            case 0xB9: return "POP"
+            case 0xBA: return "QUIT"
+            case 0xBB: return "NEW_LINE"
+            case 0xBC: return "SHOW_STATUS"
+            case 0xBD: return "VERIFY"
+            default: return "UNKNOWN_0OP"
+            }
+
+        case "1OP":
+            let baseOpcode = opcode & 0x0F
+            switch baseOpcode {
+            case 0x00: return "JZ"
+            case 0x01: return "GET_SIBLING"
+            case 0x02: return "GET_CHILD"
+            case 0x03: return "GET_PARENT"
+            case 0x04: return "GET_PROP_LEN"
+            case 0x05: return "INC"
+            case 0x06: return "DEC"
+            case 0x07: return "PRINT_ADDR"
+            case 0x08: return "CALL_1S"
+            case 0x09: return "REMOVE_OBJ"
+            case 0x0A: return "PRINT_OBJ"
+            case 0x0B: return "RET"
+            case 0x0C: return "JUMP"
+            case 0x0D: return "PRINT_PADDR"
+            case 0x0E: return "LOAD"
+            case 0x0F: return version.rawValue <= 4 ? "NOT" : "CALL_1N"
+            default: return "UNKNOWN_1OP"
+            }
+
+        case "2OP":
+            let baseOpcode = opcode & 0x1F
+            switch baseOpcode {
+            case 0x01: return "JE"
+            case 0x02: return "JL"
+            case 0x03: return "JG"
+            case 0x04: return "DEC_CHK"
+            case 0x05: return "INC_CHK"
+            case 0x06: return "JIN"
+            case 0x07: return "TEST"
+            case 0x08: return "OR"
+            case 0x09: return "AND"
+            case 0x0A: return "TEST_ATTR"
+            case 0x0B: return "SET_ATTR"
+            case 0x0C: return "CLEAR_ATTR"
+            case 0x0D: return "STORE"
+            case 0x0E: return "INSERT_OBJ"
+            case 0x0F: return "LOADW"
+            case 0x10: return "LOADB"
+            case 0x11: return "GET_PROP"
+            case 0x12: return "GET_PROP_ADDR"
+            case 0x13: return "GET_NEXT_PROP"
+            case 0x14: return "ADD"
+            case 0x15: return "SUB"
+            case 0x16: return "MUL"
+            case 0x17: return "DIV"
+            case 0x18: return "MOD"
+            case 0x19: return "CALL_2S"
+            case 0x1A: return "CALL_2N"
+            case 0x1B: return "SET_COLOUR"
+            case 0x1C: return "THROW"
+            default: return "UNKNOWN_2OP"
+            }
+
+        case "2OP_VAR":
+            // VAR-encoded 2OP instructions (0xC0-0xDF) - use 2OP mnemonic table
+            let baseOpcode = opcode & 0x1F
+            switch baseOpcode {
+            case 0x01: return "JE"
+            case 0x02: return "JL"
+            case 0x03: return "JG"
+            case 0x04: return "DEC_CHK"
+            case 0x05: return "INC_CHK"
+            case 0x06: return "JIN"
+            case 0x07: return "TEST"
+            case 0x08: return "OR"
+            case 0x09: return "AND"
+            case 0x0A: return "TEST_ATTR"
+            case 0x0B: return "SET_ATTR"
+            case 0x0C: return "CLEAR_ATTR"
+            case 0x0D: return "STORE"
+            case 0x0E: return "INSERT_OBJ"
+            case 0x0F: return "LOADW"
+            case 0x10: return "LOADB"
+            case 0x11: return "GET_PROP"
+            case 0x12: return "GET_PROP_ADDR"
+            case 0x13: return "GET_NEXT_PROP"
+            case 0x14: return "ADD"
+            case 0x15: return "SUB"
+            case 0x16: return "MUL"
+            case 0x17: return "DIV"
+            case 0x18: return "MOD"
+            case 0x19: return "CALL_2S"
+            case 0x1A: return "CALL_2N"
+            case 0x1B: return "SET_COLOUR"
+            case 0x1C: return "THROW"
+            default: return "UNKNOWN_2OP_VAR"
+            }
+        case "VAR":
+            let baseOpcode = opcode & 0x1F
+            switch baseOpcode {
+            case 0x00: return version.rawValue <= 3 ? "CALL" : "CALL_VS"
+            case 0x01: return "STOREW"
+            case 0x02: return "STOREB"
+            case 0x03: return "PUT_PROP"
+            case 0x04: return "SREAD"
+            case 0x05: return "PRINT_CHAR"
+            case 0x06: return "PRINT_NUM"
+            case 0x07: return "RANDOM"
+            case 0x08: return "PUSH"
+            case 0x09: return "PULL"
+            case 0x0A: return "SPLIT_WINDOW"
+            case 0x0B: return "SET_WINDOW"
+            case 0x0C: return "CALL_VS2"
+            case 0x0D: return "ERASE_WINDOW"
+            case 0x0E: return "ERASE_LINE"
+            case 0x0F: return "SET_CURSOR"
+            case 0x10: return "GET_CURSOR"
+            case 0x11: return "SET_TEXT_STYLE"
+            case 0x12: return "BUFFER_MODE"
+            case 0x13: return "OUTPUT_STREAM"
+            case 0x14: return "INPUT_STREAM"
+            case 0x15: return "SOUND_EFFECT"
+            case 0x16: return "READ_CHAR"
+            case 0x17: return "SCAN_TABLE"
+            case 0x18: return version.rawValue >= 5 ? "NOT" : "UNKNOWN_VAR_0x18"
+            case 0x19: return "CALL_VN"
+            case 0x1A: return "CALL_VN2"
+            case 0x1B: return "TOKENISE"
+            case 0x1C: return "ENCODE_TEXT"
+            case 0x1D: return "COPY_TABLE"
+            case 0x1E: return "PRINT_TABLE"
+            case 0x1F: return "CHECK_ARG_COUNT"
+            default: return "UNKNOWN_VAR"
+            }
+
+        case "EXT":
+            switch opcode {
+            case 0x00: return "SAVE"
+            case 0x01: return "RESTORE"
+            case 0x02: return "LOG_SHIFT"
+            case 0x03: return "ART_SHIFT"
+            case 0x04: return "SET_FONT"
+            case 0x05: return "DRAW_PICTURE"
+            case 0x06: return "PICTURE_DATA"
+            case 0x07: return "ERASE_PICTURE"
+            case 0x08: return "SET_MARGINS"
+            case 0x09: return "SAVE_UNDO"
+            case 0x0A: return "RESTORE_UNDO"
+            case 0x0B: return "PRINT_UNICODE"
+            case 0x0C: return "CHECK_UNICODE"
+            case 0x0D: return "SET_TRUE_COLOUR"
+            case 0x10: return "MOVE_WINDOW"
+            case 0x11: return "WINDOW_SIZE"
+            case 0x12: return "WINDOW_STYLE"
+            case 0x13: return "GET_WIND_PROP"
+            case 0x14: return "SCROLL_WINDOW"
+            case 0x15: return "POP_STACK"
+            case 0x16: return "READ_MOUSE"
+            case 0x17: return "MOUSE_WINDOW"
+            case 0x18: return "PUSH_STACK"
+            case 0x19: return "PUT_WIND_PROP"
+            case 0x1A: return "PRINT_FORM"
+            case 0x1B: return "MAKE_MENU"
+            case 0x1C: return "PICTURE_TABLE"
+            case 0x1D: return "BUFFER_SCREEN"
+            default: return "UNKNOWN_EXT"
+            }
+
+        default:
+            return "UNKNOWN"
+        }
+    }
+
     /// Write out the current instruction trace and clear it
     private func flushTrace(nextPC: UInt32) {
         guard let traceHandle = traceFileHandle,
@@ -211,8 +402,9 @@ public class ZMachine {
 
         let operandStr = instruction.operands.map { String($0) }.joined(separator: ", ")
         let bytesStr = bytesConsumed.map { String(format: "0x%02X", $0) }.joined(separator: " ")
+        let mnemonic = getMnemonic(opcode: instruction.opcode, type: instruction.type)
 
-        let traceLine = "\(instruction.startAddress): 0x\(String(instruction.opcode, radix: 16, uppercase: true)) (\(instruction.type)) [\(operandStr)] [\(bytesStr)]\n"
+        let traceLine = "\(instruction.startAddress): 0x\(String(instruction.opcode, radix: 16, uppercase: true)) \(mnemonic) (\(instruction.type)) [\(operandStr)] [\(bytesStr)]\n"
 
 //                              instruction.startAddress,
 //                              instruction.opcode,
@@ -1177,14 +1369,6 @@ public class ZMachine {
         // Convert ZSCII to string for processing
         let inputString = convertFromZSCII(textData)
 
-        // DEBUG: Print text buffer contents
-        print("DEBUG: Text buffer analysis:")
-        print("  - Text buffer address: 0x\(String(textBuffer, radix: 16, uppercase: true))")
-        print("  - Text start address: 0x\(String(textStartAddress, radix: 16, uppercase: true))")
-        print("  - Actual text length: \(textLength)")
-        print("  - Text data: \(textData.map { String(format: "%02X", $0) }.joined(separator: " "))")
-        print("  - Decoded text: '\(inputString)'")
-
         // Parse words using Z-Machine word separation rules
         let words = parseWordsFromInput(inputString)
 
@@ -1194,12 +1378,6 @@ public class ZMachine {
 
         // Store word count
         try writeByte(UInt8(actualWordCount), at: parseBuffer + 1)
-
-        // DEBUG: Print parse buffer setup
-        print("DEBUG: Parse buffer analysis:")
-        print("  - Max words: \(maxWords)")
-        print("  - Actual word count: \(actualWordCount)")
-        print("  - Words found: \(words.map { "\'\($0.text)\' at pos \($0.position) len \($0.length)" })")
 
         // Process each word
         for (index, wordInfo) in words.prefix(actualWordCount).enumerated() {
@@ -1224,29 +1402,6 @@ public class ZMachine {
             // V1-V4: text starts at buffer[1], V5+: text starts at buffer[2]
             let positionInBuffer = wordInfo.position + 1  // Convert to 1-based
             try writeByte(UInt8(positionInBuffer), at: entryAddress + 3)
-
-            // DEBUG: Print parse buffer entry
-            print("DEBUG: Parse entry \(index): '\(wordInfo.text)' -> addr=0x\(String(dictionaryAddress, radix: 16, uppercase: true)), len=\(wordInfo.length), pos=\(positionInBuffer)")
-        }
-
-        // DEBUG: Dump parse buffer contents to match PEZ format
-        do {
-            print("DEBUG: Parse buffer contents:")
-            print("  - Parse buffer address: 0x\(String(parseBuffer, radix: 16, uppercase: true))")
-            let maxWordsFromBuffer = try readByte(at: parseBuffer)
-            let actualWordsFromBuffer = try readByte(at: parseBuffer + 1)
-            print("  - Max words: \(maxWordsFromBuffer)")
-            print("  - Actual word count: \(actualWordsFromBuffer)")
-            print("  - Parse entries:")
-            for i in 0..<Int(actualWordsFromBuffer) {
-                let entryAddr = parseBuffer + 2 + UInt32(i * 4)
-                let dictAddr = try readWord(at: entryAddr)
-                let len = try readByte(at: entryAddr + 2)
-                let pos = try readByte(at: entryAddr + 3)
-                print("    Entry \(i): dict_addr=0x\(String(dictAddr, radix: 16, uppercase: true)), len=\(len), pos=\(pos)")
-            }
-        } catch {
-            print("DEBUG: Failed to read parse buffer: \(error)")
         }
     }
 
@@ -1313,16 +1468,11 @@ public class ZMachine {
         let maxWordLength = version.rawValue >= 4 ? 9 : 6
         let truncatedWord = String(word.prefix(maxWordLength))
 
-        // DEBUG: Add temporary debug output
-        print("DEBUG: Looking up word '\(word)' -> truncated: '\(truncatedWord)'")
-
         // Look up truncated word in dictionary
         if let entry = dict.lookup(truncatedWord) {
             // Dictionary entry already contains absolute address
-            print("DEBUG: Found word '\(truncatedWord)' at address 0x\(String(entry.address, radix: 16, uppercase: true))")
             return entry.address
         } else {
-            print("DEBUG: Word '\(truncatedWord)' NOT found in dictionary")
             return 0 // Word not found
         }
     }
@@ -1746,7 +1896,7 @@ public class ZMachine {
                 localCount: UInt8(min(frame.localCount, 15)), // Quetzal limit
                 locals: frame.locals,
                 stackBase: stackBase,
-                storeVariable: 0, // This would need to be captured during CALL
+                storeVariable: frame.storeVariable ?? 0, // Save store variable (0 for CALL_VN)
                 argumentMask: 0   // This would need argument count tracking
             )
             quetzalCallStack.append(quetzalFrame)
@@ -1823,7 +1973,8 @@ public class ZMachine {
                 returnPC: quetzalFrame.returnPC,
                 localCount: Int(quetzalFrame.localCount),
                 locals: quetzalFrame.locals,
-                evaluationStackBase: Int(quetzalFrame.stackBase)
+                evaluationStackBase: Int(quetzalFrame.stackBase),
+                storeVariable: quetzalFrame.storeVariable  // Restore from save
             )
             callStack.append(vmFrame)
         }
@@ -1858,6 +2009,24 @@ public class ZMachine {
         }
 
         try objectTree.load(from: objectData, version: version, objectTableAddress: objectTableOffset, staticMemoryBase: header.staticMemoryBase, dictionaryAddress: header.dictionaryAddress)
+    }
+
+    // MARK: - Random Number Generation
+
+    /// Generate a random number in the given range
+    ///
+    /// - Parameter range: Positive for random range 1...range, negative to seed generator, 0 returns 0
+    /// - Returns: Random number or 0 for seeding
+    internal func generateRandom(_ range: Int16) -> Int16 {
+        if range > 0 {
+            return randomGenerator.next(in: 1...Int(range))
+        } else if range < 0 {
+            // Use absolute value of negative range as seed
+            randomGenerator.seed(UInt32(abs(Int(range))))
+            return 0
+        } else {
+            return 0
+        }
     }
 }
 
@@ -2018,6 +2187,7 @@ public struct StackFrame {
     let localCount: Int
     let locals: [UInt16]
     let evaluationStackBase: Int
+    let storeVariable: UInt8?  // Store variable for CALL (nil for CALL_VN)
 }
 
 /// Text output delegate for handling text display
@@ -2061,4 +2231,46 @@ public protocol TextOutputDelegate: AnyObject {
 public protocol TextInputDelegate: AnyObject {
     func requestInput() -> String
     func requestInputWithTimeout(timeLimit: TimeInterval) -> (input: String?, timedOut: Bool)
+}
+
+/// Seeded random number generator for consistent game behavior
+internal class SeededRandomGenerator {
+    private var seed: UInt32
+
+    init() {
+        // Initialize with current time as default seed
+        self.seed = UInt32(Date().timeIntervalSince1970) & 0xFFFFFF
+    }
+
+    /// Set the random seed
+    ///
+    /// - Parameter newSeed: New seed value
+    func seed(_ newSeed: UInt32) {
+        self.seed = newSeed & 0xFFFFFF // Keep it 24-bit for consistency
+    }
+
+    /// Generate next random number in range
+    ///
+    /// Uses a simple linear congruential generator for consistency
+    /// - Parameter range: Range for random number (e.g., 1...6 for dice)
+    /// - Returns: Random number in the specified range
+    func next(in range: ClosedRange<Int>) -> Int16 {
+        // Bounds checking
+        guard range.lowerBound >= Int(Int16.min) && range.upperBound <= Int(Int16.max) else {
+            return 0 // Return safe value for out-of-bounds range
+        }
+        guard range.lowerBound <= range.upperBound else {
+            return Int16(range.lowerBound) // Invalid range, return lower bound
+        }
+
+        // Linear congruential generator: (a * seed + c) mod m
+        // Using constants from Numerical Recipes
+        seed = (1664525 &* seed &+ 1013904223) & 0xFFFFFF
+
+        let rangeSize = range.upperBound - range.lowerBound + 1
+        let result = range.lowerBound + Int(seed % UInt32(rangeSize))
+
+        // Ensure result fits in Int16
+        return Int16(clamping: result)
+    }
 }

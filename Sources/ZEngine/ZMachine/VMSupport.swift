@@ -175,7 +175,7 @@ extension ZMachine {
 extension ZMachine {
 
     /// Call a routine with arguments
-    func callRoutine(_ packedAddress: UInt32, arguments: [Int16]) throws -> Int16 {
+    func callRoutine(_ packedAddress: UInt32, arguments: [Int16], storeVariable: UInt8? = nil) throws -> Int16 {
         if packedAddress == 0 {
             // Call to address 0 returns false immediately
             return 0
@@ -188,7 +188,8 @@ extension ZMachine {
             returnPC: programCounter,
             localCount: locals.count,
             locals: locals,
-            evaluationStackBase: evaluationStack.count
+            evaluationStackBase: evaluationStack.count,
+            storeVariable: storeVariable
         )
         callStack.append(frame)
 
@@ -244,8 +245,11 @@ extension ZMachine {
             _ = evaluationStack.removeLast()
         }
 
-        // Store return value in the calling routine's result variable
-        try storeResult(value)
+        // Store return value using saved store variable (if any)
+        if let storeVariable = frame.storeVariable {
+            try writeVariable(storeVariable, value: value)
+        }
+        // If storeVariable is nil, this was CALL_VN and return value is discarded
     }
 }
 
