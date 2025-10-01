@@ -15,11 +15,6 @@ struct DebugLexerTests {
             tokens.append(token)
         } while !tokens.last!.type.isEOF
 
-        // Print tokens for debugging
-        for token in tokens {
-            print("Token: \(token.type) value: '\(token.value)' at \(token.location)")
-        }
-
         #expect(tokens.count == 4) // < RTRUE > EOF
         #expect(tokens[0].type == .leftAngle)
         if case .atom(let name) = tokens[1].type {
@@ -41,11 +36,6 @@ struct DebugLexerTests {
             let token = try lexer.nextToken()
             tokens.append(token)
         } while !tokens.last!.type.isEOF
-
-        // Print tokens for debugging
-        for (index, token) in tokens.enumerated() {
-            print("Token \(index): \(token.type) value: '\(token.value)' at \(token.location)")
-        }
 
         // Should have: < ROUTINE TEST ( ) < RTRUE > > EOF
         #expect(tokens.count == 10)

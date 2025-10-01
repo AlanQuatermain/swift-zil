@@ -274,26 +274,12 @@ extension ZMachine {
 
     /// Read a Z-encoded string from memory
     func readZString(at address: UInt32) throws -> ZStringResult {
-        // Debug: Log string decoding attempts for object short names (commented out)
-        /*
-        let shouldLog = address >= 0x3900 && address <= 0x3910 // Focus on Object 1's address range
-        if shouldLog {
-            print("DEBUG: readZString called at address=0x\(String(address, radix: 16, uppercase: true))")
-        }
-        */
-
         var currentAddress = address
         var zchars: [UInt8] = []
 
         // Read Z-string words until end bit is set
         while true {
             let word = try readWord(at: currentAddress)
-
-            /*
-            if shouldLog {
-                print("DEBUG: readZString word at 0x\(String(currentAddress, radix: 16)): 0x\(String(word, radix: 16, uppercase: true))")
-            }
-            */
 
             currentAddress += 2
 
@@ -302,35 +288,17 @@ extension ZMachine {
             let char2 = UInt8((word >> 5) & 0x1F)
             let char3 = UInt8(word & 0x1F)
 
-            /*
-            if shouldLog {
-                print("DEBUG: Z-chars from word: \(char1), \(char2), \(char3)")
-            }
-            */
-
             zchars.append(char1)
             zchars.append(char2)
             zchars.append(char3)
 
             // Stop if end bit is set
             if (word & 0x8000) != 0 {
-                /*
-                if shouldLog {
-                    print("DEBUG: End bit set, stopping Z-string read")
-                }
-                */
                 break
             }
         }
 
         let decodedString = try decodeZString(zchars)
-
-        /*
-        if shouldLog {
-            print("DEBUG: readZString result at 0x\(String(address, radix: 16, uppercase: true)): \"\(decodedString)\" (next: 0x\(String(currentAddress, radix: 16, uppercase: true)))")
-        }
-        */
-
         return ZStringResult(string: decodedString, nextAddress: currentAddress)
     }
 
@@ -345,15 +313,10 @@ extension ZMachine {
         let alphabet1 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         let alphabet2 = " \n0123456789.,!?_#'\"/\\-:()"
 
-        // Debug mode flag - temporarily enable to debug abbreviation issues
-        let debugDecoding = false
-
         while i < zchars.count {
             let zchar = zchars[i]
 
-            if debugDecoding {
-                print("🔤 Z-char[\(i)]: \(zchar) (alphabet: \(currentAlphabet))")
-            }
+            ZILLogger.vm.debug("🔤 Z-char[\(i)]: \(zchar) (alphabet: \(currentAlphabet))")
 
             if zchar == 0 {
                 // Null character - space
@@ -365,9 +328,7 @@ extension ZMachine {
 
                     // CRITICAL FIX: Validate abbreviation number range
                     guard abbrevNumber <= 31 else {
-                        if debugDecoding {
-                            print("❌ Invalid abbreviation number: \(abbrevNumber) (must be 0-31)")
-                        }
+                        ZILLogger.vm.debug("❌ Invalid abbreviation number: \(abbrevNumber) (must be 0-31)")
                         // Skip invalid abbreviation sequence entirely
                         i += 1
                         i += 1
@@ -380,15 +341,11 @@ extension ZMachine {
                     // A2 (zchar 3): entries 64-95
                     let abbrevIndex = Int((zchar - 1) * 32 + abbrevNumber)
 
-                    if debugDecoding {
-                        print("📝 Abbreviation A\(zchar-1)[\(abbrevNumber)] -> index \(abbrevIndex)")
-                    }
+                    ZILLogger.vm.debug("📝 Abbreviation A\(zchar-1)[\(abbrevNumber)] -> index \(abbrevIndex)")
 
                     // CRITICAL FIX: More thorough validation
                     guard abbrevIndex >= 0 && abbrevIndex < abbreviationTable.count else {
-                        if debugDecoding {
-                            print("❌ Abbreviation index \(abbrevIndex) out of bounds (table size: \(abbreviationTable.count))")
-                        }
+                        ZILLogger.vm.debug("❌ Abbreviation index \(abbrevIndex) out of bounds (table size: \(abbreviationTable.count))")
                         // Skip invalid abbreviation sequence entirely
                         i += 1
                         i += 1
@@ -399,9 +356,7 @@ extension ZMachine {
 
                     // CRITICAL FIX: Check for null address
                     guard abbrevStringAddress != 0 else {
-                        if debugDecoding {
-                            print("❌ Abbreviation \(abbrevIndex) has null address")
-                        }
+                        ZILLogger.vm.debug("❌ Abbreviation \(abbrevIndex) has null address")
                         // Skip null abbreviation sequence entirely
                         i += 1
                         i += 1
@@ -411,14 +366,10 @@ extension ZMachine {
                     do {
                         // Read and decode the abbreviated string recursively
                         let abbrevResult = try readZString(at: abbrevStringAddress)
-                        if debugDecoding {
-                            print("✅ Expanded abbreviation \(abbrevIndex): '\(abbrevResult.string)'")
-                        }
+                        ZILLogger.vm.debug("✅ Expanded abbreviation \(abbrevIndex): '\(abbrevResult.string)'")
                         result += abbrevResult.string
                     } catch {
-                        if debugDecoding {
-                            print("❌ Failed to expand abbreviation \(abbrevIndex): \(error)")
-                        }
+                        ZILLogger.vm.debug("❌ Failed to expand abbreviation \(abbrevIndex): \(error)")
                         // CRITICAL FIX: Don't add anything for failed abbreviations
                         // The Z-Machine spec says invalid abbreviations should be ignored
                     }
@@ -426,9 +377,7 @@ extension ZMachine {
                     i += 1  // Skip the abbreviation number
                 } else {
                     // Incomplete abbreviation sequence - skip the incomplete Z-char
-                    if debugDecoding {
-                        print("❌ Incomplete abbreviation sequence at end of string")
-                    }
+                    ZILLogger.vm.debug("❌ Incomplete abbreviation sequence at end of string")
                 }
             } else if zchar == 4 {
                 // Shift to alphabet 1
@@ -442,9 +391,7 @@ extension ZMachine {
                         let low = zchars[i + 3]
                         let zsciiValue = (high << 5) | low
 
-                        if debugDecoding {
-                            print("🔤 ZSCII escape: \(zsciiValue)")
-                        }
+                        ZILLogger.vm.debug("🔤 ZSCII escape: \(zsciiValue)")
 
                         // For v5+, use Unicode translation for extended ZSCII characters
                         if version.rawValue >= 5 && zsciiValue >= 155 && zsciiValue <= 223 {
@@ -477,9 +424,7 @@ extension ZMachine {
                     } else {
                         // Invalid character index - add placeholder
                         result += "?"
-                        if debugDecoding {
-                            print("❌ Invalid alphabet0 index: \(charIndex)")
-                        }
+                        ZILLogger.vm.debug("❌ Invalid alphabet0 index: \(charIndex)")
                     }
                 case 1:
                     if charIndex < alphabet1.count {
@@ -488,9 +433,7 @@ extension ZMachine {
                     } else {
                         // Invalid character index - add placeholder
                         result += "?"
-                        if debugDecoding {
-                            print("❌ Invalid alphabet1 index: \(charIndex)")
-                        }
+                        ZILLogger.vm.debug("❌ Invalid alphabet1 index: \(charIndex)")
                     }
                 case 2:
                     if charIndex < alphabet2.count {
@@ -499,16 +442,12 @@ extension ZMachine {
                     } else {
                         // Invalid character index - add placeholder
                         result += "?"
-                        if debugDecoding {
-                            print("❌ Invalid alphabet2 index: \(charIndex)")
-                        }
+                        ZILLogger.vm.debug("❌ Invalid alphabet2 index: \(charIndex)")
                     }
                 default:
                     // Unknown alphabet - add placeholder
                     result += "?"
-                    if debugDecoding {
-                        print("❌ Unknown alphabet: \(currentAlphabet)")
-                    }
+                    ZILLogger.vm.debug("❌ Unknown alphabet: \(currentAlphabet)")
                 }
 
                 // Reset to alphabet 0 after one character (shifts are temporary)
@@ -787,52 +726,29 @@ extension ZMachine {
     /// - Throws: RuntimeError for memory access or decoding errors
     public func readObjectShortDescription(_ objectNumber: UInt16) throws -> String {
         guard let object = objectTree.getObject(objectNumber) else {
-            // print("DEBUG: readObjectShortDescription - object \(objectNumber) not found")
             return ""
         }
 
         let propertyTableAddress = object.getPropertyTableAddress()
         guard propertyTableAddress > 0 else {
-            // print("DEBUG: readObjectShortDescription - object \(objectNumber) has no property table")
             return ""
         }
 
-        // print("DEBUG: readObjectShortDescription - property table address: 0x\(String(propertyTableAddress, radix: 16, uppercase: true))")
-
         // Property table address is now already absolute
         let absoluteAddress = UInt32(propertyTableAddress)
-        // print("DEBUG: readObjectShortDescription - object \(objectNumber), property table at 0x\(String(absoluteAddress, radix: 16, uppercase: true))")
 
         // Read text length byte
         let textLength = try readByte(at: absoluteAddress)
-        // print("DEBUG: readObjectShortDescription - text length: \(textLength) words")
-        // print("DEBUG: readObjectShortDescription - raw byte at address: 0x\(String(textLength, radix: 16, uppercase: true))")
-
-        // Let's examine the next few bytes to see what's really there (commented out)
-        /*
-        print("DEBUG: Raw bytes at property table address:")
-        for i in 0..<16 {
-            if absoluteAddress + UInt32(i) < UInt32(storyData.count) {
-                let byte = try readByte(at: absoluteAddress + UInt32(i))
-                let charRepresentation = (byte >= 32 && byte <= 126) ? " '\(Character(UnicodeScalar(byte) ?? UnicodeScalar(63)!))'" : ""
-                print("DEBUG: Byte at +\(i): 0x\(String(byte, radix: 16, uppercase: true)) (\(byte))\(charRepresentation)")
-            }
-        }
-        */
 
         guard textLength > 0 else {
-            // print("DEBUG: readObjectShortDescription - object \(objectNumber) has empty short description")
             return ""
         }
 
         // Short description starts immediately after length byte
         let textAddress = absoluteAddress + 1
-        // print("DEBUG: readObjectShortDescription - reading text from 0x\(String(textAddress, radix: 16, uppercase: true))")
 
         // Read the Z-string directly
         let result = try readZString(at: textAddress)
-        // print("DEBUG: readObjectShortDescription - decoded: \"\(result.string)\"")
-
         return result.string
     }
     private func isValidAddress(_ address: UInt32) -> Bool {
@@ -865,7 +781,6 @@ extension ZMachine {
     public func analyzeHighMemoryStrings() -> [HighMemoryStringInfo] {
         var results: [HighMemoryStringInfo] = []
         let highMemoryStart = header.highMemoryBase
-        let highMemorySize = UInt32(storyData.count) - highMemoryStart
 
         var stringCount = 0
         var currentAddress = highMemoryStart

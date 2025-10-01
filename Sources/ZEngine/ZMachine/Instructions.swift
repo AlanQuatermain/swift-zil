@@ -176,7 +176,7 @@ extension ZMachine {
 
         case 0x0A: // PRINT_OBJ
             // Print object short description from property table (not property 1)
-            // print("DEBUG: PRINT_OBJ instruction - object=\(UInt16(bitPattern: operand))")
+            ZILLogger.vm.debug("PRINT_OBJ instruction - object=\(UInt16(bitPattern: operand))")
             let description = try readObjectShortDescription(UInt16(bitPattern: operand))
             if !description.isEmpty {
                 outputText(description)

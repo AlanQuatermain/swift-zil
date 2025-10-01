@@ -148,31 +148,40 @@ ZIL is a Lisp-like domain-specific language for interactive fiction:
 - [x] Binary I/O utilities and byte stream processing
 - [x] Complete test coverage (46 tests across 28 suites)
 
-### Phase 2: ZIL Compiler (Planned)
-- [ ] Lexical analyzer for ZIL syntax
-- [ ] Parser for S-expressions and language constructs
-- [ ] Abstract Syntax Tree (AST) design
-- [ ] Symbol table management
-- [ ] Code generation to ZAP assembly
+### Phase 2: ZIL Compiler 🔄 NEARLY COMPLETE
+- [x] Lexical analyzer for ZIL syntax
+- [x] Parser for S-expressions and language constructs
+- [x] Abstract Syntax Tree (AST) design
+- [x] Symbol table management with scoping and type checking
+- [x] Comprehensive semantic analysis system
+- [◐] ZAP code generation with full ZIL language support
 
-### Phase 3: Z-Machine Assembler (Planned)
-- [ ] ZAP assembly parser
-- [ ] Instruction encoding for all Z-Machine versions
-- [ ] Memory layout and story file generation
-- [ ] Symbol resolution and linking
+### Phase 3: Z-Machine Assembler ✅ COMPLETE
+- [x] ZAP assembly parser
+- [x] Instruction encoding for all Z-Machine versions
+- [x] Memory layout and story file generation
+- [x] Symbol resolution and linking
 
-### Phase 4: Z-Machine Virtual Machine (Planned)
-- [ ] Story file loader and validator
-- [ ] Instruction processor for all opcodes
-- [ ] Memory management system
-- [ ] I/O system for text and graphics
-- [ ] Save/restore functionality
+### Phase 4: Z-Machine Virtual Machine 🔄 NEARLY COMPLETE
+- [x] Story file loader and validator for all versions
+- [x] Instruction processor for complete opcode set
+- [x] Memory management system with proper region handling
+- [x] ZIP-style windowed terminal interface with authentic scrolling
+- [x] Object tree loading and property management
+- [x] Dictionary and string processing with Unicode support
+- [ ] Save/restore functionality with Quetzal format
 
-### Phase 5: Advanced Features (Planned)
-- [ ] Debugger and development tools
-- [ ] Optimization passes
+### Phase 5: Advanced Features 🚧 IN PROGRESS
+- [x] Complete game compatibility (Zork I fully playable)
+- [x] Authentic terminal renderer matching original ZIP behavior
+- [ ] Interactive debugger and development tools
+- [ ] Optimization passes for generated code
 - [ ] Cross-compilation support
-- [ ] Integration with existing game sources
+- [ ] Enhanced development workflow tools
+
+## Current Status
+
+**🔄 LARGELY FUNCTIONAL** - The Swift ZIL toolchain has core functionality working across all components. The Z-Machine virtual machine successfully runs existing version 3 story files (proven with Zork I). The compiler and assembler can process valid input and produce correct output, but some ZIL language constructs remain unimplemented. Full end-to-end game compilation from ZIL source has not yet been demonstrated.
 
 ## Testing
 

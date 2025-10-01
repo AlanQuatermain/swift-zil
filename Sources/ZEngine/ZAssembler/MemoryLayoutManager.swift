@@ -544,8 +544,8 @@ public class MemoryLayoutManager {
     }
 
     private func calculateAbbreviationsAddress() -> UInt16 {
-        // No abbreviations for now - point to dictionary
-        return calculateDictionaryAddress()
+        // No abbreviations table implemented yet - return 0 to indicate no table
+        return 0
     }
 
     private func calculateObjectTableSize() -> UInt32 {
@@ -1018,8 +1018,8 @@ public class MemoryLayoutManager {
                 // Object has properties - generate property table
                 let propertyTable = try generatePropertyTable(for: object)
 
-                print("       Object \(object.name): Properties found, setting address to \(currentOffset)")
-                print("       Generated property table size: \(propertyTable.count) bytes")
+                ZILLogger.vm.debug("       Object \(object.name): Properties found, setting address to \(currentOffset)")
+                ZILLogger.vm.debug("       Generated property table size: \(propertyTable.count) bytes")
 
                 // Update object's property table address (offset within static memory)
                 objectTable[objectIndex].propertyTableAddress = UInt16(currentOffset)
@@ -1035,7 +1035,7 @@ public class MemoryLayoutManager {
             }
         }
 
-        print("       Total property data size: \(propertyData.count) bytes")
+        ZILLogger.vm.debug("       Total property data size: \(propertyData.count) bytes")
         return propertyData
     }
 

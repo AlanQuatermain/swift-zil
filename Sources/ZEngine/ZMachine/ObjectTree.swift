@@ -551,34 +551,34 @@ public struct ObjectEntry {
             self.propertyTableAddress = propertyTableAddress
         }
 
-        if propertyTableAddress > 0 {
+        if propertyTableAddress > 0 && Int(propertyTableAddress) < data.count {
             try loadPropertiesFromTable(data: data)
 
             // Debug: Check object short name during loading (commented out to reduce output)
-            /*
-            let tableAddress = Int(propertyTableAddress)
-            if tableAddress < data.count {
-                let textLength = data[tableAddress]
-                print("DEBUG: Object \(objectNumber) - text length: \(textLength) words, property table at offset 0x\(String(propertyTableAddress, radix: 16, uppercase: true))")
+            if ZILLogger.vm.logLevel <= .debug {
+                let tableAddress = Int(propertyTableAddress)
+                if tableAddress < data.count {
+                    let textLength = data[tableAddress]
+                    ZILLogger.vm.debug("Object \(objectNumber) - text length: \(textLength) words, property table at offset 0x\(String(propertyTableAddress, radix: 16, uppercase: true))")
 
-                if textLength > 0 {
-                    print("DEBUG: Object \(objectNumber) HAS short description (\(textLength) words)")
+                    if textLength > 0 {
+                        ZILLogger.vm.debug("Object \(objectNumber) HAS short description (\(textLength) words)")
 
-                    // Show raw bytes at property table address
-                    print("DEBUG: Raw bytes at property table (offset 0x\(String(propertyTableAddress, radix: 16))):")
-                    for i in 0..<min(12, data.count - tableAddress) {
-                        let byte = data[tableAddress + i]
-                        let charRep = (byte >= 32 && byte <= 126) ? " '\(Character(UnicodeScalar(byte) ?? UnicodeScalar(63)!))'" : ""
-                        print("DEBUG:   +\(i): 0x\(String(byte, radix: 16, uppercase: true)) (\(byte))\(charRep)")
+                        // Show raw bytes at property table address
+                        ZILLogger.vm.debug("Raw bytes at property table (offset 0x\(String(propertyTableAddress, radix: 16))):")
+                        for i in 0..<min(12, data.count - tableAddress) {
+                            let byte = data[tableAddress + i]
+                            let charRep = (byte >= 32 && byte <= 126) ? " '\(Character(UnicodeScalar(byte)))'" : ""
+                            ZILLogger.vm.debug("  +\(i): 0x\(String(byte, radix: 16, uppercase: true)) (\(byte))\(charRep)")
+                        }
+
+                        // Address stored for later decoding by ZMachine
+                        ZILLogger.vm.debug("Object \(objectNumber) short name at address 0x\(String(UInt32(tableAddress + 1), radix: 16, uppercase: true))")
+                    } else {
+                        ZILLogger.vm.debug("Object \(objectNumber) has NO short description (empty)")
                     }
-
-                    // Address stored for later decoding by ZMachine
-                    print("DEBUG: Object \(objectNumber) short name at address 0x\(String(UInt32(tableAddress + 1), radix: 16, uppercase: true))")
-                } else {
-                    print("DEBUG: Object \(objectNumber) has NO short description (empty)")
                 }
             }
-            */
         }
     }
 
@@ -709,14 +709,6 @@ public struct ObjectEntry {
             }
 
             properties[propertyNumber] = propertyValue
-
-            // Debug logging for property loading (commented out)
-            /*
-            if objectNumber == 230 || objectNumber == 121 {
-                print("DEBUG: Loaded property \(propertyNumber) = \(propertyValue) (0x\(String(propertyValue, radix: 16, uppercase: true))) for object \(objectNumber)")
-            }
-            */
-
             offset += propertySize
         }
     }

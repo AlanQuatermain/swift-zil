@@ -113,7 +113,7 @@ public class ZILParser {
         // Resolve the file path relative to the current file
         let resolvedPath = try resolveIncludePath(insertFile.filename)
 
-        print("Including file: \(insertFile.filename) -> \(resolvedPath)")
+        ZILLogger.parser.notice("Including file: \(insertFile.filename) -> \(resolvedPath)")
 
         // Check for circular dependencies
         if includeStack.contains(resolvedPath) {
@@ -535,9 +535,9 @@ public class ZILParser {
 
         // Execute compile-time print
         if case .string(let message, _) = text {
-            print("PRINC: \(message)")
+            ZILLogger.parser.debug("PRINC: \(message)")
         } else {
-            print("PRINC: <complex expression>")
+            ZILLogger.parser.debug("PRINC: <complex expression>")
         }
 
         return ZILPrincDeclaration(text: text, location: startLocation)

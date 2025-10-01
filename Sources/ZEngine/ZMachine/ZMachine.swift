@@ -689,46 +689,6 @@ public class ZMachine {
         if version.rawValue >= 5 {
             try loadUnicodeTranslationTable()
         }
-
-        // Debug: Print decoded object short names now that all tables are loaded
-        try printObjectShortNames()
-    }
-
-    /// Debug method to print decoded object short names
-    private func printObjectShortNames() throws {
-        // Commented out to reduce debug output
-        /*
-        print("DEBUG: === Decoding Object Short Names ===")
-
-        // Check first 20 objects to see their short descriptions
-        for objectNum in 1...20 {
-            if let object = objectTree.getObject(UInt16(objectNum)) {
-                let propertyTableOffset = object.getPropertyTableAddress()
-
-                if propertyTableOffset > 0 {
-                    // Calculate absolute address
-                    let absoluteAddress = header.staticMemoryBase + UInt32(propertyTableOffset)
-
-                    // Read text length
-                    let textLength = try readByte(at: absoluteAddress)
-
-                    if textLength > 0 {
-                        // Read and decode the short description
-                        let textAddress = absoluteAddress + 1
-                        do {
-                            let result = try readZString(at: textAddress)
-                            print("DEBUG: Object \(objectNum) = \"\(result.string)\"")
-                        } catch {
-                            print("DEBUG: Object \(objectNum) - failed to decode: \(error)")
-                        }
-                    } else {
-                        print("DEBUG: Object \(objectNum) = (no short name)")
-                    }
-                }
-            }
-        }
-        print("DEBUG: === End Object Short Names ===")
-        */
     }
 
     private func loadAbbreviationTable() throws {
@@ -1685,39 +1645,39 @@ public class ZMachine {
     public func validateMemoryManagement() -> Bool {
         // Check that memory regions are properly initialized
         guard !dynamicMemory.isEmpty else {
-            print("❌ Dynamic memory not initialized")
+            ZILLogger.vm.debug("❌ Dynamic memory not initialized")
             return false
         }
 
         guard !staticMemory.isEmpty else {
-            print("❌ Static memory not initialized")
+            ZILLogger.vm.debug("❌ Static memory not initialized")
             return false
         }
 
         guard !highMemory.isEmpty else {
-            print("❌ High memory not initialized")
+            ZILLogger.vm.debug("❌ High memory not initialized")
             return false
         }
 
         // Check that boundaries are correct
         guard staticMemoryBase > 64 else {
-            print("❌ Static memory base (\(staticMemoryBase)) must be > 64")
+            ZILLogger.vm.debug("❌ Static memory base (\(staticMemoryBase)) must be > 64")
             return false
         }
 
         guard highMemoryBase >= staticMemoryBase else {
-            print("❌ High memory base (\(highMemoryBase)) must be >= static memory base (\(staticMemoryBase))")
+            ZILLogger.vm.debug("❌ High memory base (\(highMemoryBase)) must be >= static memory base (\(staticMemoryBase))")
             return false
         }
 
         // Check that memory regions match header
         guard dynamicMemory.count == Int(staticMemoryBase) else {
-            print("❌ Dynamic memory size (\(dynamicMemory.count)) doesn't match static base (\(staticMemoryBase))")
+            ZILLogger.vm.debug("❌ Dynamic memory size (\(dynamicMemory.count)) doesn't match static base (\(staticMemoryBase))")
             return false
         }
 
         guard staticMemory.count == Int(highMemoryBase - staticMemoryBase) else {
-            print("❌ Static memory size (\(staticMemory.count)) doesn't match expected size (\(highMemoryBase - staticMemoryBase))")
+            ZILLogger.vm.debug("❌ Static memory size (\(staticMemory.count)) doesn't match expected size (\(highMemoryBase - staticMemoryBase))")
             return false
         }
 
@@ -1730,7 +1690,7 @@ public class ZMachine {
             try writeByte(originalValue, at: 0) // restore
 
             guard newValue == 42 else {
-                print("❌ Dynamic memory write/read test failed")
+                ZILLogger.vm.debug("❌ Dynamic memory write/read test failed")
                 return false
             }
 
@@ -1740,14 +1700,16 @@ public class ZMachine {
             // Test high memory read (should work)
             _ = try readByte(at: highMemoryBase)
 
-            print("✓ Memory management validation successful")
-            print("  Dynamic: 0 - \(staticMemoryBase-1) (\(dynamicMemory.count) bytes)")
-            print("  Static: \(staticMemoryBase) - \(highMemoryBase-1) (\(staticMemory.count) bytes)")
-            print("  High: \(highMemoryBase) - \(highMemoryBase + UInt32(highMemory.count)-1) (\(highMemory.count) bytes)")
+            ZILLogger.vm.debug("""
+                ✓ Memory management validation successful
+                  Dynamic: 0 - \(staticMemoryBase-1) (\(dynamicMemory.count) bytes)
+                  Static: \(staticMemoryBase) - \(highMemoryBase-1) (\(staticMemory.count) bytes)
+                  High: \(highMemoryBase) - \(highMemoryBase + UInt32(highMemory.count)-1) (\(highMemory.count) bytes)
+                """)
             return true
 
         } catch {
-            print("❌ Memory access test failed: \(error)")
+            ZILLogger.vm.debug("❌ Memory access test failed: \(error)")
             return false
         }
     }

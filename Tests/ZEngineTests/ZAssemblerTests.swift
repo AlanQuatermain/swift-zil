@@ -160,7 +160,6 @@ struct ZAssemblerTests {
         // Validate checksum calculation
         let warnings = layoutManager.validateStoryFile(storyFile)
         for warning in warnings {
-            print("Warning: \(warning)")
         }
         // Should have minimal warnings for a valid story file
         #expect(warnings.count <= 10)  // Allow for some expected warnings in minimal file
@@ -280,7 +279,6 @@ struct ZAssemblerTests {
 
         // Print warnings for debugging
         for warning in warnings {
-            print("Validation warning: \(warning)")
         }
 
         // A properly generated story file should have minimal warnings

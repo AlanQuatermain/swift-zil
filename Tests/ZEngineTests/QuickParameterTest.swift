@@ -26,9 +26,7 @@ struct QuickParameterTest {
         // Verify default value is captured
         if case .number(let value, _) = routine.optionalParameters[0].defaultValue {
             #expect(value == 10)
-            print("✅ Successfully captured default value: \(value)")
         } else {
-            print("❌ Default value not captured correctly")
             #expect(Bool(false), "Default value should be captured")
         }
     }

@@ -63,12 +63,9 @@ struct DebugVariableReferences {
         }
 
         let allVarRefs = routine.body.flatMap(findVariableReferences)
-        print("All variable references found: \(allVarRefs)")
 
         let propertyRefs = allVarRefs.filter { $0.contains("property") }
         let flagRefs = allVarRefs.filter { $0.contains("flag") }
 
-        print("Property references: \(propertyRefs)")
-        print("Flag references: \(flagRefs)")
     }
 }

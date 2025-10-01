@@ -9,7 +9,7 @@ struct FWordsTests {
     @Test("FWORDS table header parsing")
     func fwordsTableHeaderParsing() throws {
         // Test that the header parsing correctly reads the abbreviation table address
-        var mutableHeader = Data(count: 64)
+        var mutableHeader = Data(count: 1024 * 12)
 
         // Set version to 3
         mutableHeader[0] = 3
@@ -84,7 +84,6 @@ struct FWordsTests {
         } catch {
             // If the decoding fails due to invalid memory access (expected with null entries),
             // that's also acceptable for this test
-            print("Abbreviation decoding failed as expected with null entries: \(error)")
         }
     }
 
@@ -97,7 +96,6 @@ struct FWordsTests {
         let storyURL = URL(fileURLWithPath: storyPath)
 
         guard FileManager.default.fileExists(atPath: storyPath) else {
-            print("⚠️ Zork 1 story file not found at \(storyPath), skipping test")
             return
         }
 
@@ -115,7 +113,5 @@ struct FWordsTests {
         let nonZeroCount = vm.abbreviationTable.filter { $0 > 0 }.count
         #expect(nonZeroCount > 0, "Should have at least some non-zero abbreviation entries")
 
-        print("✅ Loaded \(nonZeroCount) non-zero abbreviations from Zork 1")
-        print("📊 Abbreviation table address: 0x\(String(vm.header.abbreviationTableAddress, radix: 16))")
     }
 }

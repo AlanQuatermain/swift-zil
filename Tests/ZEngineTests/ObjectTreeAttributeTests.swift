@@ -160,16 +160,17 @@ struct ObjectTreeBitManipulationTests {
         // 2 bytes child (zero)
         staticMemoryData[objectOffset + 10] = 0
         staticMemoryData[objectOffset + 11] = 0
-        // 2 bytes property table (zero - no properties)
-        staticMemoryData[objectOffset + 12] = 0
-        staticMemoryData[objectOffset + 13] = 0
+        // 2 bytes property table (point to valid location in static memory)
+        let propertyTableAddr: UInt16 = 150  // Point to a valid location in our data
+        staticMemoryData[objectOffset + 12] = UInt8(propertyTableAddr >> 8)
+        staticMemoryData[objectOffset + 13] = UInt8(propertyTableAddr & 0xFF)
 
         // Create ObjectTree and load the data
         let objectTree = ObjectTree()
         try objectTree.load(from: staticMemoryData,
                           version: .v4,
                           objectTableAddress: 0,
-                          staticMemoryBase: 0,
+                          staticMemoryBase: 200,  // Set static memory base above our property table
                           dictionaryAddress: 200)  // Dictionary at end so objects can load
 
         // Test high-numbered attribute operations that previously caused overflow

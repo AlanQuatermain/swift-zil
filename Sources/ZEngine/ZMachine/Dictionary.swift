@@ -122,7 +122,7 @@ public class Dictionary {
             return entry
         } else {
             // Look for entries that decode to this word
-            for (data, entry) in entries {
+            for (_, entry) in entries {
                 let decoded = entry.decodeWord()
                 if decoded == word.lowercased() {
                     return entry
@@ -229,9 +229,6 @@ public class Dictionary {
                 break
             }
         }
-
-        // Remember the actual length of meaningful Z-characters
-        let actualLength = zchars.count
 
         // Pad to word boundary
         while zchars.count < 9 {

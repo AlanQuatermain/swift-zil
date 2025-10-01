@@ -5,7 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.4.0] - 2025-01-01
+## [0.4.1] - 2025-10-01
+
+### Added
+- Proper terminal renderer based on the classic UNIX ZIP implementation.
+
+## [0.4.0] - 2025-10-01
 
 ### Added
 - **Full Game Compatibility Achievement** 🎮
@@ -42,7 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Perfect consistency between assembler instruction encoding and VM instruction decoding
 - Complete Z-Machine instruction set support across all versions (v3, v4, v5, v6, v8)
 
-## [0.3.0] - 2025-01-01
+## [0.3.0] - 2025-09-26
 
 ### Fixed
 - **Critical Instruction Encoding Bugs** - Resolved all 9 failing tests in ZAP Code Generator and Z-Machine Assembler
@@ -69,7 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Complete ZIL→ZAP→bytecode pipeline fully functional
 - Integration tests pass including VM loading and instruction encoding validation
 
-## [0.2.0] - 2025-01-01
+## [0.2.0] - 2025-09-24
 
 ### Added
 - **Complete ZIL Compiler Implementation (Phase 2)**

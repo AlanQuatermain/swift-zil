@@ -210,10 +210,6 @@ struct SemanticAnalysisTests {
 
         // Should succeed - local variables used within proper scope
         guard case .success = result else {
-            let diagnostics = analyzer.getDiagnostics()
-            for diag in diagnostics {
-                print("Diagnostic: \(diag.message)")
-            }
             #expect(Bool(false), "Scope validation should succeed for proper usage")
             return
         }
@@ -390,11 +386,6 @@ struct SemanticAnalysisTests {
         let result = analyzer.analyzeProgram(program)
 
         guard case .success = result else {
-            let diagnostics = analyzer.getDiagnostics()
-            print("Analysis failed with \(diagnostics.count) diagnostics:")
-            for diag in diagnostics {
-                print("  - \(diag.message) at \(diag.location)")
-            }
             #expect(Bool(false), "Complex program analysis should succeed")
             return
         }
@@ -621,10 +612,6 @@ struct SemanticAnalysisTests {
         let result = analyzer.analyzeProgram(program)
 
         guard case .success = result else {
-            let diagnostics = analyzer.getDiagnostics()
-            for diag in diagnostics {
-                print("Diagnostic: \(diag.message)")
-            }
             #expect(Bool(false), "Optional and auxiliary parameters should be handled correctly")
             return
         }
@@ -792,10 +779,6 @@ struct SemanticAnalysisTests {
         let result = analyzer.analyzeProgram(program)
 
         guard case .success = result else {
-            let diagnostics = analyzer.getDiagnostics()
-            for diag in diagnostics {
-                print("Forward reference diagnostic: \(diag.message)")
-            }
             #expect(Bool(false), "Complex forward references should resolve successfully")
             return
         }
@@ -908,7 +891,6 @@ struct SemanticAnalysisTests {
             }
 
             // Either we detected circular dependencies or other issues (both are valid outcomes)
-            print("Circular dependency test - diagnostics: \(diagnostics.count), circular: \(circularDiags.count)")
         }
 
         // Test passes if the circular dependency detection code executed without errors
@@ -943,10 +925,6 @@ struct SemanticAnalysisTests {
         // Even though we can't easily test the internal dependency graph,
         // we can verify that the analysis completes successfully
         guard case .success = result else {
-            let diagnostics = analyzer.getDiagnostics()
-            for diag in diagnostics {
-                print("Dependency tracking diagnostic: \(diag.message)")
-            }
             #expect(Bool(false), "Global dependency tracking should work correctly")
             return
         }
@@ -1020,24 +998,21 @@ struct SemanticAnalysisTests {
                 #expect(unusedSymbol?.references.isEmpty == true, "Unused global should have no references")
 
                 // Test passes - unused symbol exists but has no references (which is what we expect)
-                print("Unused symbol test: Symbol defined but not referenced (no unused symbol diagnostics generated)")
             } else {
                 // Check if we have either unreachable code diagnostics or unused symbol diagnostics
                 let totalUnusedDiags = unreachableDiags.count + unusedSymbolDiags.count
                 #expect(totalUnusedDiags >= 1, "Should detect unused symbol either as unreachable code or undefined symbol")
 
                 if !unusedSymbolDiags.isEmpty {
-                    print("Unused symbol test: Found \(unusedSymbolDiags.count) unused symbol diagnostic(s)")
                 }
             }
 
-        case .failure(let allDiagnostics):
+        case .failure:
             // If analysis fails, it might be due to unused symbol detection
             if unreachableDiags.count > 0 {
-                #expect(unreachableDiags.count > 0, "Successfully detected and converted unused symbols to unreachable code diagnostics")
+                #expect(unreachableDiags.count == 0, "Successfully detected and converted unused symbols to unreachable code diagnostics")
             } else {
                 // Analysis failed for other reasons - verify the failure is expected
-                print("Analysis failed with \(allDiagnostics.count) diagnostics, but no unused symbol diagnostics")
                 // This might be acceptable depending on implementation
             }
         }
