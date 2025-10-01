@@ -732,9 +732,6 @@ extension ZMachine {
             // Trace the store byte
             traceStoreByte(storeVariable)
 
-            // Trace the CALL setup
-            traceText("CALL setup: routine=\(routineAddress), args=\(arguments), store_var=\(storeVariable)")
-
             _ = try callRoutine(routineAddress, arguments: arguments, storeVariable: storeVariable)
 
             // Result storage is handled by returnFromRoutine using saved store variable

@@ -170,7 +170,6 @@ public class ZMachine {
         let opcode: UInt8
         var type: String = ""
         var operands: [Int16] = []
-        var storeByte: UInt8?
     }
 
     /// Begin tracing a new instruction
@@ -199,8 +198,7 @@ public class ZMachine {
 
     /// Set the store byte for the current instruction trace
     internal func traceStoreByte(_ storeByte: UInt8) {
-        guard traceFileHandle != nil else { return }
-        currentInstruction?.storeByte = storeByte
+        // Store byte tracking removed - no-op
     }
 
     /// Write a text line to the trace log
@@ -446,15 +444,7 @@ public class ZMachine {
         let bytesStr = bytesConsumed.map { String(format: "0x%02X", $0) }.joined(separator: " ")
         let mnemonic = getMnemonic(opcode: instruction.opcode, type: instruction.type)
 
-        // Add store byte information if applicable
-        let storeByteStr: String
-        if let storeByte = instruction.storeByte {
-            storeByteStr = " store=0x\(String(format: "%02X", storeByte))"
-        } else {
-            storeByteStr = ""
-        }
-
-        let traceLine = "\(instruction.startAddress): 0x\(String(instruction.opcode, radix: 16, uppercase: true)) \(mnemonic) (\(instruction.type)) [\(operandStr)]\(storeByteStr) [\(bytesStr)]\n"
+        let traceLine = "\(instruction.startAddress): 0x\(String(format: "%02X", instruction.opcode)) \(mnemonic) (\(instruction.type)) [\(operandStr)] [\(bytesStr)]\n"
 
 //                              instruction.startAddress,
 //                              instruction.opcode,
@@ -674,25 +664,11 @@ public class ZMachine {
 
         // Load object tree from appropriate memory region
         let objectTableAddress = header.objectTableAddress
-        let objectData: Data
-        let objectTableOffset: UInt32
 
-        if objectTableAddress < header.staticMemoryBase {
-            // Object table is in dynamic memory
-            guard objectTableAddress < UInt32(dynamicMemory.count) else {
-                throw RuntimeError.corruptedStoryFile("Object table address \(objectTableAddress) exceeds dynamic memory size \(dynamicMemory.count)", location: SourceLocation.unknown)
-            }
-            objectData = dynamicMemory
-            objectTableOffset = objectTableAddress
-        } else {
-            // Object table is in static memory
-            let staticOffset = objectTableAddress - header.staticMemoryBase
-            guard staticOffset < UInt32(staticMemory.count) else {
-                throw RuntimeError.corruptedStoryFile("Object table offset \(staticOffset) exceeds static memory size \(staticMemory.count)", location: SourceLocation.unknown)
-            }
-            objectData = staticMemory
-            objectTableOffset = staticOffset
-        }
+        // Object tree needs access to entire story file since objects are in dynamic memory
+        // but property tables are in static memory
+        let objectData = storyData
+        let objectTableOffset = objectTableAddress
 
         try objectTree.load(from: objectData, version: version, objectTableAddress: objectTableOffset, staticMemoryBase: header.staticMemoryBase, dictionaryAddress: header.dictionaryAddress)
 
@@ -1613,21 +1589,12 @@ public class ZMachine {
         // Reload global variables from story file
         try loadGlobals()
 
-        // Reload object tree to reset all object states - handle dynamic or static memory location
+        // Reload object tree to reset all object states
+        // Object tree needs access to entire story file since objects are in dynamic memory
+        // but property tables are in static memory
         let objectTableAddress = header.objectTableAddress
-        let objectData: Data
-        let objectTableOffset: UInt32
-
-        if objectTableAddress < header.staticMemoryBase {
-            // Object table is in dynamic memory (now reset)
-            objectData = dynamicMemory
-            objectTableOffset = objectTableAddress
-        } else {
-            // Object table is in static memory
-            let staticOffset = objectTableAddress - header.staticMemoryBase
-            objectData = staticMemory
-            objectTableOffset = staticOffset
-        }
+        let objectData = storyData
+        let objectTableOffset = objectTableAddress
 
         try objectTree.load(from: objectData, version: version, objectTableAddress: objectTableOffset, staticMemoryBase: header.staticMemoryBase, dictionaryAddress: header.dictionaryAddress)
 
@@ -2042,21 +2009,12 @@ public class ZMachine {
         // Reload global variables from restored dynamic memory
         try loadGlobals()
 
-        // Reload object tree state (objects may have moved/changed) - handle dynamic or static memory location
+        // Reload object tree state (objects may have moved/changed)
+        // Object tree needs access to entire story file since objects are in dynamic memory
+        // but property tables are in static memory
         let objectTableAddress = header.objectTableAddress
-        let objectData: Data
-        let objectTableOffset: UInt32
-
-        if objectTableAddress < header.staticMemoryBase {
-            // Object table is in dynamic memory (now restored)
-            objectData = dynamicMemory
-            objectTableOffset = objectTableAddress
-        } else {
-            // Object table is in static memory
-            let staticOffset = objectTableAddress - header.staticMemoryBase
-            objectData = staticMemory
-            objectTableOffset = staticOffset
-        }
+        let objectData = storyData
+        let objectTableOffset = objectTableAddress
 
         try objectTree.load(from: objectData, version: version, objectTableAddress: objectTableOffset, staticMemoryBase: header.staticMemoryBase, dictionaryAddress: header.dictionaryAddress)
     }

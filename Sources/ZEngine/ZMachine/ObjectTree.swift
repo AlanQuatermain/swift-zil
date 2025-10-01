@@ -59,68 +59,72 @@ public class ObjectTree {
         var objectNumber: UInt16 = 1
         let objectSize = version.rawValue >= 4 ? 14 : 9
 
-        // Calculate the maximum offset for object loading
-        let maxObjectOffset: Int
-        if let dictAddr = dictionaryAddress {
-            // If we know the dictionary address, don't read past it
-            let dictOffset = Int(dictAddr - staticMemoryBase)
-            maxObjectOffset = dictOffset
-        } else {
-            // Otherwise, use the full static memory size
-            maxObjectOffset = data.count
+        // Determine object table size based on Object 1's property table address
+        // This works for all versions - the property tables start where Object 1's property table is
+
+        // First, we need to read Object 1 to get its property table address
+        guard offset + objectSize <= data.count else {
+            throw RuntimeError.corruptedStoryFile("Object table truncated", location: SourceLocation.unknown)
         }
 
-        // Check for end of objects more carefully - objects should immediately follow property defaults
-        // If there's enough space for at least one object, check if it's all zeros (indicating end of object table)
-        while offset + objectSize <= maxObjectOffset && offset + objectSize <= data.count {
+        // Read Object 1's property table address (last 2 bytes of object entry)
+        let object1PropertyTableOffset = offset + objectSize - 2
+        let object1PropertyTable = (UInt32(data[object1PropertyTableOffset]) << 8) | UInt32(data[object1PropertyTableOffset + 1])
+        let propertyTablesStart = Int(object1PropertyTable)
 
-            // Check if this is the end of the object table by looking for all zeros in the object slot
-            var allZeroBytes = true
-            for i in 0..<objectSize {
-                if data[offset + i] != 0 {
-                    allZeroBytes = false
-                    break
+        // Calculate how many objects can fit before property tables start
+        let availableBytes = propertyTablesStart - offset
+        let maxObjects = availableBytes / objectSize
+
+        // Load objects with validation
+        while objectNumber <= maxObjects && offset + objectSize <= data.count && offset < propertyTablesStart {
+            // For V1-V3, check if object slot is all zeros (unused object)
+            if version.rawValue <= 3 {
+                var allZeroBytes = true
+                for i in 0..<objectSize {
+                    if data[offset + i] != 0 {
+                        allZeroBytes = false
+                        break
+                    }
+                }
+
+                if allZeroBytes {
+                    // Skip unused object slot
+                    offset += objectSize
+                    objectNumber += 1
+                    continue
                 }
             }
 
-            if allZeroBytes {
+            // Extract parent/child/sibling for validation
+            let parent: UInt16
+            let child: UInt16
+            let sibling: UInt16
+            let propertyTableAddr: UInt16
+
+            if version.rawValue >= 4 {
+                parent = (UInt16(data[offset + 6]) << 8) | UInt16(data[offset + 7])
+                sibling = (UInt16(data[offset + 8]) << 8) | UInt16(data[offset + 9])
+                child = (UInt16(data[offset + 10]) << 8) | UInt16(data[offset + 11])
+                propertyTableAddr = (UInt16(data[offset + 12]) << 8) | UInt16(data[offset + 13])
+            } else {
+                parent = UInt16(data[offset + 4])
+                sibling = UInt16(data[offset + 5])
+                child = UInt16(data[offset + 6])
+                propertyTableAddr = (UInt16(data[offset + 7]) << 8) | UInt16(data[offset + 8])
+            }
+
+            // Validate parent/child/sibling are within valid object range
+            let maxValidObject = UInt16(maxObjects)
+            if (parent != 0 && parent > maxValidObject) ||
+               (child != 0 && child > maxValidObject) ||
+               (sibling != 0 && sibling > maxValidObject) {
                 break
             }
 
-            // Check if we've reached the end of objects (all zero attributes AND all zero relationships)
-            let attributesStart = offset
-            var hasNonZeroAttributes = false
-            let attributeSize = version.rawValue >= 4 ? 6 : 4
-
-            for i in 0..<attributeSize {
-                if data[attributesStart + i] != 0 {
-                    hasNonZeroAttributes = true
-                    break
-                }
-            }
-
-            // If no attributes and no relationships, we've likely reached the end
-            if !hasNonZeroAttributes {
-                var hasRelationships = false
-                let relationshipStart = offset + attributeSize
-                let relationshipCount = version.rawValue >= 4 ? 6 : 3
-
-                for i in 0..<relationshipCount {
-                    if data[relationshipStart + i] != 0 {
-                        hasRelationships = true
-                        break
-                    }
-                }
-
-                if !hasRelationships {
-                    // Check property table address too (last 2 bytes) - if it's non-zero, object is valid
-                    let propTableAddrOffset = offset + attributeSize + relationshipCount
-                    let propTableAddr = (UInt16(data[propTableAddrOffset]) << 8) | UInt16(data[propTableAddrOffset + 1])
-
-                    if propTableAddr == 0 {
-                        break
-                    }
-                }
+            // Validate property table address is reasonable
+            if propertyTableAddr != 0 && (propertyTableAddr < propertyTablesStart || propertyTableAddr >= staticMemoryBase) {
+                break
             }
 
             let entry = try ObjectEntry(from: data, at: offset, objectNumber: objectNumber, version: version, staticMemoryBase: staticMemoryBase)
@@ -319,13 +323,18 @@ public class ObjectTree {
     ///   - property: Property number (1-63)
     /// - Returns: Address of property data, or 0 if property doesn't exist
     public func getPropertyAddress(_ objectNumber: UInt16, property: UInt8) -> UInt16 {
-        guard let object = objects[objectNumber] else { return 0 }
+        guard let object = objects[objectNumber] else {
+            return 0
+        }
         guard property > 0 else { return 0 }
 
         let tableAddress = Int(object.propertyTableAddress)
-        guard tableAddress < memoryData.count else { return 0 }
+        guard tableAddress < memoryData.count else {
+            return 0
+        }
 
-        return findPropertyAddress(property: property, tableAddress: tableAddress) ?? 0
+        let result = findPropertyAddress(property: property, tableAddress: tableAddress, objectNumber: objectNumber) ?? 0
+        return result
     }
 
     /// Get the length of a property at a given address
@@ -357,7 +366,7 @@ public class ObjectTree {
 
     // MARK: - Private Helper Methods
 
-    private func findPropertyAddress(property: UInt8, tableAddress: Int) -> UInt16? {
+    private func findPropertyAddress(property: UInt8, tableAddress: Int, objectNumber: UInt16) -> UInt16? {
         var offset = tableAddress
 
         // Skip object short name (text length byte + encoded text)
@@ -370,13 +379,16 @@ public class ObjectTree {
             let header = memoryData[offset]
 
             // Check for end marker
-            if header == 0 { break }
+            if header == 0 {
+                break
+            }
 
             let (propertyNumber, propertySize, headerSize) = decodePropertyHeader(header, offset: offset)
 
             if propertyNumber == property {
                 // Return address of property data (skip header bytes)
-                return UInt16(offset + headerSize)
+                let result = UInt16(offset + headerSize)
+                return result
             }
 
             // Move to next property

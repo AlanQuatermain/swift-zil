@@ -96,21 +96,11 @@ extension ZMachine {
             value = Int16(bitPattern: globals[globalIndex])
         }
 
-        // Trace variable reads for variable 0 (stack) or when value is 44
-        if variableNumber == 0 || value == 44 {
-            traceText("read variable \(variableNumber): \(value)")
-        }
-
         return value
     }
 
     /// Write value to a variable
     func writeVariable(_ variableNumber: UInt8, value: Int16) throws {
-        // Trace variable writes for variable 0 (stack) or when value is 44
-        if variableNumber == 0 || value == 44 {
-            traceText("write variable \(variableNumber): \(value)")
-        }
-
         if variableNumber == 0 {
             // Stack
             try pushStack(value)
@@ -142,9 +132,6 @@ extension ZMachine {
 
         // Trace the store byte
         traceStoreByte(variableNumber)
-
-        // Trace the result store operation
-        traceText("STORE: value=\(value) to variable=\(variableNumber)")
 
         try writeVariable(variableNumber, value: value)
     }
@@ -199,7 +186,6 @@ extension ZMachine {
         if packedAddress == 0 {
             // Call to address 0 returns false immediately
             if let storeVariable = storeVariable {
-                traceText("RETURN: value=0 to variable=\(storeVariable) (CALL to address 0)")
                 try writeVariable(storeVariable, value: 0)
             }
             return 0
@@ -271,10 +257,7 @@ extension ZMachine {
 
         // Store return value using saved store variable (if any)
         if let storeVariable = frame.storeVariable {
-            traceText("RETURN: value=\(value) to variable=\(storeVariable)")
             try writeVariable(storeVariable, value: value)
-        } else {
-            traceText("RETURN: value=\(value) discarded (CALL_VN)")
         }
         // If storeVariable is nil, this was CALL_VN and return value is discarded
     }

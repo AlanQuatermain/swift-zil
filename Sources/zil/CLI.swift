@@ -687,6 +687,10 @@ struct AnalyzeCommand: ParsableCommand {
 
         // Check for gaps in object numbering
         var gapCount = 0
+        guard maxObjectNumber > 0 else {
+            print("ERROR: No objects were loaded from the object tree")
+            return
+        }
         for i in 1...maxObjectNumber {
             if objectTree.getObject(i) == nil {
                 gapCount += 1
