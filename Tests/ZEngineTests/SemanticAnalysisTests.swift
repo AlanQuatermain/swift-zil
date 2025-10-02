@@ -37,7 +37,7 @@ struct SemanticAnalysisTests {
         let result = analyzer.analyzeProgram(program)
 
         guard case .success = result else {
-            #expect(Bool(false), "Basic symbol resolution should succeed")
+            Issue.record("Basic symbol resolution should succeed, but got: \(result)")
             return
         }
 
@@ -78,7 +78,7 @@ struct SemanticAnalysisTests {
         let result = analyzer.analyzeProgram(program)
 
         guard case .failure(let diagnostics) = result else {
-            #expect(Bool(false), "Should detect undefined symbol")
+            Issue.record("Should detect undefined symbol, but got: \(result)")
             return
         }
 
@@ -115,7 +115,7 @@ struct SemanticAnalysisTests {
         let result = analyzer.analyzeProgram(program)
 
         guard case .failure(let diagnostics) = result else {
-            #expect(Bool(false), "Should detect symbol redefinition")
+            Issue.record("Should detect symbol redefinition, but got: \(result)")
             return
         }
 
@@ -170,7 +170,7 @@ struct SemanticAnalysisTests {
         let result = analyzer.analyzeProgram(program)
 
         guard case .failure(let diagnostics) = result else {
-            #expect(Bool(false), "Should detect parameter count mismatch")
+            Issue.record("Should detect parameter count mismatch, but got: \(result)")
             return
         }
 
@@ -210,7 +210,7 @@ struct SemanticAnalysisTests {
 
         // Should succeed - local variables used within proper scope
         guard case .success = result else {
-            #expect(Bool(false), "Scope validation should succeed for proper usage")
+            Issue.record("Scope validation should succeed for proper usage, but got: \(result)")
             return
         }
 
@@ -883,7 +883,7 @@ struct SemanticAnalysisTests {
 
         case .failure(let diagnostics):
             // If analysis fails, check if it's due to circular dependency or other issues
-            let circularDiags = diagnostics.filter { diagnostic in
+            let _ = diagnostics.filter { diagnostic in
                 if case .circularDependency = diagnostic.code {
                     return true
                 }

@@ -35,46 +35,46 @@ struct MacroProcessingTests {
         )
 
         guard case .success(let expanded) = result else {
-            #expect(Bool(false), "FORM-based macro should expand")
+            Issue.record("FORM-based macro should expand, but got: \(result)")
             return
         }
 
         // Should expand to: <FORM PUT MY-INTERRUPT ,C-ENABLED? 1>
-        if case .list(let elements, _) = expanded {
-            #expect(elements.count == 5, "Should have FORM + PUT + interrupt + global + value")
-
-            guard case .atom(let formOp, _) = elements[0] else {
-                #expect(Bool(false), "First element should be FORM")
-                return
-            }
-            #expect(formOp == "FORM", "Should start with FORM")
-
-            guard case .atom(let putOp, _) = elements[1] else {
-                #expect(Bool(false), "Second element should be PUT")
-                return
-            }
-            #expect(putOp == "PUT", "Should have PUT instruction")
-
-            guard case .atom(let interrupt, _) = elements[2] else {
-                #expect(Bool(false), "Third element should be substituted interrupt name")
-                return
-            }
-            #expect(interrupt == "MY-INTERRUPT", "Should substitute parameter correctly")
-
-            guard case .globalVariable(let globalVar, _) = elements[3] else {
-                #expect(Bool(false), "Fourth element should be global variable")
-                return
-            }
-            #expect(globalVar == "C-ENABLED?", "Should preserve global variable reference")
-
-            guard case .number(let value, _) = elements[4] else {
-                #expect(Bool(false), "Fifth element should be number")
-                return
-            }
-            #expect(value == 1, "Should have value 1")
-        } else {
-            #expect(Bool(false), "Expanded result should be a list")
+        guard case .list(let elements, _) = expanded else {
+            Issue.record("Expanded result should be a list, but got: \(expanded)")
+            return
         }
+        #expect(elements.count == 5, "Should have FORM + PUT + interrupt + global + value")
+
+        guard case .atom(let formOp, _) = elements[0] else {
+            Issue.record("First element should be FORM, but got: \(elements[0])")
+            return
+        }
+        #expect(formOp == "FORM", "Should start with FORM")
+
+        guard case .atom(let putOp, _) = elements[1] else {
+            Issue.record("Second element should be PUT, but got: \(elements[1])")
+            return
+        }
+        #expect(putOp == "PUT", "Should have PUT instruction")
+
+        guard case .atom(let interrupt, _) = elements[2] else {
+            Issue.record("Third element should be substituted interrupt name, but got: \(elements[2])")
+            return
+        }
+        #expect(interrupt == "MY-INTERRUPT", "Should substitute parameter correctly")
+
+        guard case .globalVariable(let globalVar, _) = elements[3] else {
+            Issue.record("Fourth element should be global variable, but got: \(elements[3])")
+            return
+        }
+        #expect(globalVar == "C-ENABLED?", "Should preserve global variable reference")
+
+        guard case .number(let value, _) = elements[4] else {
+            Issue.record("Fifth element should be number, but got: \(elements[4])")
+            return
+        }
+        #expect(value == 1, "Should have value 1")
     }
 
 
@@ -105,16 +105,16 @@ struct MacroProcessingTests {
         )
 
         guard case .error(let diagnostic) = result else {
-            #expect(Bool(false), "Should produce argument count error")
+            Issue.record("Should produce argument count error, but got: \(result)")
             return
         }
 
-        if case .argumentCountMismatch(let expected, let got) = diagnostic.code {
-            #expect(expected == 2, "Should expect 2 arguments")
-            #expect(got == 1, "Should have received 1 argument")
-        } else {
-            #expect(Bool(false), "Should be argument count mismatch error")
+        guard case .argumentCountMismatch(let expected, let got) = diagnostic.code else {
+            Issue.record("Should be argument count mismatch error, but got: \(diagnostic.code)")
+            return
         }
+        #expect(expected == 2, "Should expect 2 arguments")
+        #expect(got == 1, "Should have received 1 argument")
     }
 
     @Test("Undefined macro error")
@@ -129,15 +129,15 @@ struct MacroProcessingTests {
         )
 
         guard case .error(let diagnostic) = result else {
-            #expect(Bool(false), "Should produce undefined macro error")
+            Issue.record("Should produce undefined macro error, but got: \(result)")
             return
         }
 
-        if case .undefinedMacro(let name) = diagnostic.code {
-            #expect(name == "NONEXISTENT", "Should reference the undefined macro name")
-        } else {
-            #expect(Bool(false), "Should be undefined macro error")
+        guard case .undefinedMacro(let name) = diagnostic.code else {
+            Issue.record("Should be undefined macro error, but got: \(diagnostic.code)")
+            return
         }
+        #expect(name == "NONEXISTENT", "Should reference the undefined macro name")
     }
 
     @Test("Recursive macro detection")
@@ -166,14 +166,16 @@ struct MacroProcessingTests {
         let expandedExpr = processor.expandExpression(testExpression)
 
         // The result should be the original expression since recursion was detected
-        if case .list(let elements, _) = expandedExpr {
-            #expect(elements.count == 1, "Should have one element")
-            if case .atom(let atomName, _) = elements[0] {
-                #expect(atomName == "RECURSE", "Should contain RECURSE atom (recursion prevented)")
-            }
-        } else {
-            #expect(Bool(false), "Should return a list expression")
+        guard case .list(let elements, _) = expandedExpr else {
+            Issue.record("Should return a list expression, but got: \(expandedExpr)")
+            return
         }
+        #expect(elements.count == 1, "Should have one element")
+        guard case .atom(let atomName, _) = elements[0] else {
+            Issue.record("Should contain RECURSE atom, but got: \(elements[0])")
+            return
+        }
+        #expect(atomName == "RECURSE", "Should contain RECURSE atom (recursion prevented)")
     }
 
     @Test("Complex macro with nested substitution")
@@ -208,29 +210,28 @@ struct MacroProcessingTests {
         )
 
         guard case .success(let expanded) = result else {
-            #expect(Bool(false), "Complex macro should expand successfully")
+            Issue.record("Complex macro should expand successfully, but got: \(result)")
             return
         }
 
         // Should expand to: (+ 3 (+ 3 3))
-        if case .list(let elements, _) = expanded {
-            #expect(elements.count == 3, "Should have + operator and 2 operands")
-
-            guard case .number(let firstOperand, _) = elements[1] else {
-                #expect(Bool(false), "Second element should be number 3")
-                return
-            }
-            #expect(firstOperand == 3, "First operand should be 3")
-
-            guard case .list(let nestedAdd, _) = elements[2] else {
-                #expect(Bool(false), "Third element should be nested addition")
-                return
-            }
-
-            #expect(nestedAdd.count == 3, "Nested addition should have 3 elements")
-        } else {
-            #expect(Bool(false), "Expanded result should be a list")
+        guard case .list(let elements, _) = expanded else {
+            Issue.record("Expanded result should be a list, but got: \(expanded)")
+            return
         }
+        #expect(elements.count == 3, "Should have + operator and 2 operands")
+
+        guard case .number(let firstOperand, _) = elements[1] else {
+            Issue.record("Second element should be number 3, but got: \(elements[1])")
+            return
+        }
+        #expect(firstOperand == 3, "First operand should be 3")
+
+        guard case .list(let nestedAdd, _) = elements[2] else {
+            Issue.record("Third element should be nested addition, but got: \(elements[2])")
+            return
+        }
+        #expect(nestedAdd.count == 3, "Nested addition should have 3 elements")
     }
 
     @Test("Macro direct substitution system")
@@ -260,28 +261,28 @@ struct MacroProcessingTests {
         )
 
         guard case .success(let expanded) = result else {
-            #expect(Bool(false), "Macro should expand with direct substitution")
+            Issue.record("Macro should expand with direct substitution, but got: \(result)")
             return
         }
 
         // Check that TEMP was preserved (no hygiene in ZIL)
-        if case .list(let elements, _) = expanded {
-            #expect(elements.count == 3, "Should have SET + variable + value")
-
-            if case .localVariable(let varName, _) = elements[1] {
-                #expect(varName == "TEMP", "Variable should keep original name (no hygiene in ZIL)")
-            } else {
-                #expect(Bool(false), "Second element should be original local variable")
-            }
-
-            if case .number(let value, _) = elements[2] {
-                #expect(value == 42, "Parameter should be directly substituted")
-            } else {
-                #expect(Bool(false), "Third element should be substituted parameter")
-            }
-        } else {
-            #expect(Bool(false), "Expanded result should be a list")
+        guard case .list(let elements, _) = expanded else {
+            Issue.record("Expanded result should be a list, but got: \(expanded)")
+            return
         }
+        #expect(elements.count == 3, "Should have SET + variable + value")
+
+        guard case .localVariable(let varName, _) = elements[1] else {
+            Issue.record("Second element should be original local variable, but got: \(elements[1])")
+            return
+        }
+        #expect(varName == "TEMP", "Variable should keep original name (no hygiene in ZIL)")
+
+        guard case .number(let value, _) = elements[2] else {
+            Issue.record("Third element should be substituted parameter, but got: \(elements[2])")
+            return
+        }
+        #expect(value == 42, "Parameter should be directly substituted")
     }
 
     @Test("Macro expansion in nested expressions")
@@ -313,25 +314,25 @@ struct MacroProcessingTests {
         let expanded = processor.expandExpression(expression)
 
         // Should expand to: (+ (* 3 3) (* 4 4))
-        if case .list(let elements, _) = expanded {
-            #expect(elements.count == 3, "Should have + and 2 operands")
-
-            // Check first SQUARE expansion: (* 3 3)
-            guard case .list(let firstSquare, _) = elements[1] else {
-                #expect(Bool(false), "First operand should be expanded SQUARE")
-                return
-            }
-            #expect(firstSquare.count == 3, "First SQUARE should have * and 2 operands")
-
-            // Check second SQUARE expansion: (* 4 4)
-            guard case .list(let secondSquare, _) = elements[2] else {
-                #expect(Bool(false), "Second operand should be expanded SQUARE")
-                return
-            }
-            #expect(secondSquare.count == 3, "Second SQUARE should have * and 2 operands")
-        } else {
-            #expect(Bool(false), "Expanded expression should be a list")
+        guard case .list(let elements, _) = expanded else {
+            Issue.record("Expanded expression should be a list, but got: \(expanded)")
+            return
         }
+        #expect(elements.count == 3, "Should have + and 2 operands")
+
+        // Check first SQUARE expansion: (* 3 3)
+        guard case .list(let firstSquare, _) = elements[1] else {
+            Issue.record("First operand should be expanded SQUARE, but got: \(elements[1])")
+            return
+        }
+        #expect(firstSquare.count == 3, "First SQUARE should have * and 2 operands")
+
+        // Check second SQUARE expansion: (* 4 4)
+        guard case .list(let secondSquare, _) = elements[2] else {
+            Issue.record("Second operand should be expanded SQUARE, but got: \(elements[2])")
+            return
+        }
+        #expect(secondSquare.count == 3, "Second SQUARE should have * and 2 operands")
     }
 
 
@@ -427,7 +428,7 @@ struct MacroProcessingTests {
             at: location
         )
         guard case .error = undefResult else {
-            #expect(Bool(false), "Should produce undefined macro error")
+            Issue.record("Should produce undefined macro error, but got: \(undefResult)")
             return
         }
 
@@ -446,7 +447,7 @@ struct MacroProcessingTests {
             at: location
         )
         guard case .error = mismatchResult else {
-            #expect(Bool(false), "Should produce argument count error")
+            Issue.record("Should produce argument count error, but got: \(mismatchResult)")
             return
         }
 
@@ -550,7 +551,7 @@ struct MacroProcessingTests {
         )
 
         guard case .success(let expanded) = numberResult else {
-            #expect(Bool(false), "Complex macro should expand successfully")
+            Issue.record("Complex macro should expand successfully, but got: \(numberResult)")
             return
         }
 
