@@ -243,6 +243,36 @@ public final class SemanticAnalyzer: Sendable {
                     // Symbol redefinition will be handled by symbol table diagnostics
                 }
             }
+
+        case .syntax(let syntax):
+            // SYNTAX defines parser rules - register the action routine
+            let success = state.symbolTable.defineSymbol(
+                name: syntax.action,
+                type: .routine(parameters: [], optionalParameters: [], auxiliaryVariables: []),
+                at: syntax.location
+            )
+            if !success {
+                // Symbol redefinition will be handled by symbol table diagnostics
+            }
+
+        case .synonym(_):
+            // SYNONYM declarations don't define new symbols, they create word mappings
+            break
+
+        case .defmac(let defmac):
+            // DEFMAC defines a preprocessor macro
+            let success = state.symbolTable.defineSymbol(
+                name: defmac.name,
+                type: .macro(parameters: defmac.parameters, body: defmac.body),
+                at: defmac.location
+            )
+            if !success {
+                // Symbol redefinition will be handled by symbol table diagnostics
+            }
+
+        case .buzz(_):
+            // BUZZ declarations don't define symbols, they configure the parser
+            break
         }
     }
 
@@ -277,6 +307,22 @@ public final class SemanticAnalyzer: Sendable {
 
         case .directions(_):
             // DIRECTIONS validation handled during symbol definition
+            break
+
+        case .syntax(let syntax):
+            // TODO: Validate SYNTAX patterns and action routine
+            validateExpression(ZILExpression.atom(syntax.action, syntax.location), state: &state)
+
+        case .synonym(_):
+            // SYNONYM declarations don't need complex validation
+            break
+
+        case .defmac(let defmac):
+            // TODO: Validate macro body expression
+            validateExpression(defmac.body, state: &state)
+
+        case .buzz(_):
+            // BUZZ declarations don't need validation
             break
         }
     }
@@ -394,6 +440,12 @@ public final class SemanticAnalyzer: Sendable {
         case .number(_, _), .string(_, _):
             // Literals are always valid
             break
+
+        case .table(_, let elements, _):
+            // Validate table elements
+            for element in elements {
+                validateExpression(element, state: &state)
+            }
 
         case .indirection(let targetExpression, _):
             // Validate the target expression being dereferenced

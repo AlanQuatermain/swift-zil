@@ -25,7 +25,7 @@ public enum SymbolType: Sendable, Equatable {
     case flag
 
     /// Macro definition symbol
-    case macro(parameters: [String])
+    case macro(parameters: [ZILMacroParameter], body: ZILExpression)
 }
 
 /// Represents a symbol in the ZIL symbol table

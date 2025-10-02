@@ -21,7 +21,7 @@ struct MacroProcessingTests {
 
         let success = processor.defineMacro(
             name: "ENABLE",
-            parameters: ["INT"],  // Parameter name without quote in our implementation
+            parameters: [.standard("INT")],  // Parameter name without quote in our implementation
             body: body,
             at: location
         )
@@ -39,39 +39,33 @@ struct MacroProcessingTests {
             return
         }
 
-        // Should expand to: <FORM PUT MY-INTERRUPT ,C-ENABLED? 1>
+        // Should expand to: <PUT MY-INTERRUPT ,C-ENABLED? 1>
         guard case .list(let elements, _) = expanded else {
             Issue.record("Expanded result should be a list, but got: \(expanded)")
             return
         }
-        #expect(elements.count == 5, "Should have FORM + PUT + interrupt + global + value")
+        #expect(elements.count == 4, "Should have PUT + interrupt + global + value")
 
-        guard case .atom(let formOp, _) = elements[0] else {
-            Issue.record("First element should be FORM, but got: \(elements[0])")
+        guard case .atom(let putOp, _) = elements[0] else {
+            Issue.record("First element should be PUT, but got: \(elements[0])")
             return
         }
-        #expect(formOp == "FORM", "Should start with FORM")
+        #expect(putOp == "PUT", "Should start with PUT operation")
 
-        guard case .atom(let putOp, _) = elements[1] else {
-            Issue.record("Second element should be PUT, but got: \(elements[1])")
-            return
-        }
-        #expect(putOp == "PUT", "Should have PUT instruction")
-
-        guard case .atom(let interrupt, _) = elements[2] else {
-            Issue.record("Third element should be substituted interrupt name, but got: \(elements[2])")
+        guard case .atom(let interrupt, _) = elements[1] else {
+            Issue.record("Second element should be substituted interrupt name, but got: \(elements[1])")
             return
         }
         #expect(interrupt == "MY-INTERRUPT", "Should substitute parameter correctly")
 
-        guard case .globalVariable(let globalVar, _) = elements[3] else {
-            Issue.record("Fourth element should be global variable, but got: \(elements[3])")
+        guard case .globalVariable(let globalVar, _) = elements[2] else {
+            Issue.record("Third element should be global variable, but got: \(elements[2])")
             return
         }
         #expect(globalVar == "C-ENABLED?", "Should preserve global variable reference")
 
-        guard case .number(let value, _) = elements[4] else {
-            Issue.record("Fifth element should be number, but got: \(elements[4])")
+        guard case .number(let value, _) = elements[3] else {
+            Issue.record("Fourth element should be number, but got: \(elements[3])")
             return
         }
         #expect(value == 1, "Should have value 1")
@@ -92,7 +86,7 @@ struct MacroProcessingTests {
 
         _ = processor.defineMacro(
             name: "ADD",
-            parameters: ["A", "B"],
+            parameters: [.standard("A"), .standard("B")],
             body: body,
             at: location
         )
@@ -198,7 +192,7 @@ struct MacroProcessingTests {
 
         _ = processor.defineMacro(
             name: "TRIPLE",
-            parameters: ["X"],
+            parameters: [.standard("X")],
             body: outerAdd,
             at: location
         )
@@ -249,7 +243,7 @@ struct MacroProcessingTests {
 
         _ = processor.defineMacro(
             name: "LET-TEMP",
-            parameters: ["EXPR"],
+            parameters: [.standard("EXPR")],
             body: body,
             at: location
         )
@@ -299,7 +293,7 @@ struct MacroProcessingTests {
 
         _ = processor.defineMacro(
             name: "SQUARE",
-            parameters: ["X"],
+            parameters: [.standard("X")],
             body: squareBody,
             at: location
         )
@@ -352,7 +346,7 @@ struct MacroProcessingTests {
 
         _ = processor.defineMacro(
             name: "DEBUG-MACRO",
-            parameters: ["ARG"],
+            parameters: [.standard("ARG")],
             body: body,
             at: location
         )
@@ -436,7 +430,7 @@ struct MacroProcessingTests {
         let body = ZILExpression.atom("BODY", location)
         _ = processor.defineMacro(
             name: "TWO-PARAM",
-            parameters: ["A", "B"],
+            parameters: [.standard("A"), .standard("B")],
             body: body,
             at: location
         )
@@ -537,7 +531,7 @@ struct MacroProcessingTests {
 
         let defineSuccess = processor.defineMacro(
             name: "COMPLEX-MACRO",
-            parameters: ["PARAM"],
+            parameters: [.standard("PARAM")],
             body: complexBody,
             at: location
         )
@@ -614,5 +608,250 @@ struct MacroProcessingTests {
         if let newDiag = newDiagnostics.first, case .undefinedMacro(let name) = newDiag.code {
             #expect(name == "NEW-UNDEF", "Should have new undefined macro name")
         }
+    }
+
+    @Test("FORM construction engine basic functionality")
+    func formConstructionBasicFunctionality() throws {
+        let processor = MacroProcessor()
+        let location = SourceLocation(file: "test.zil", line: 1, column: 1)
+
+        // Define ENABLE macro using FORM: ENABLE(INT) -> <FORM PUT .INT ,C-ENABLED? 1>
+        let formBody = ZILExpression.list([
+            .atom("FORM", location),
+            .atom("PUT", location),
+            .localVariable("INT", location), // .INT parameter
+            .globalVariable("C-ENABLED?", location), // ,C-ENABLED? global
+            .number(1, location)
+        ], location)
+
+        _ = processor.defineMacro(
+            name: "ENABLE",
+            parameters: [.standard("INT")],
+            body: formBody,
+            at: location
+        )
+
+        // Test expansion: <ENABLE MY-INTERRUPT> -> <PUT MY-INTERRUPT ,C-ENABLED? 1>
+        let result = processor.expandMacro(
+            name: "ENABLE",
+            arguments: [.atom("MY-INTERRUPT", location)],
+            at: location
+        )
+
+        guard case .success(let expanded) = result else {
+            Issue.record("FORM-based macro should expand successfully, but got: \(result)")
+            return
+        }
+
+        // Should expand to: <PUT MY-INTERRUPT ,C-ENABLED? 1>
+        guard case .list(let elements, _) = expanded else {
+            Issue.record("Expanded result should be a list, but got: \(expanded)")
+            return
+        }
+
+        #expect(elements.count == 4, "Should have PUT + interrupt + global + value")
+
+        guard case .atom(let operation, _) = elements[0] else {
+            Issue.record("First element should be PUT, but got: \(elements[0])")
+            return
+        }
+        #expect(operation == "PUT", "Should start with PUT operation")
+
+        guard case .atom(let interrupt, _) = elements[1] else {
+            Issue.record("Second element should be substituted interrupt name, but got: \(elements[1])")
+            return
+        }
+        #expect(interrupt == "MY-INTERRUPT", "Should substitute parameter correctly")
+
+        guard case .globalVariable(let global, _) = elements[2] else {
+            Issue.record("Third element should be global variable, but got: \(elements[2])")
+            return
+        }
+        #expect(global == "C-ENABLED?", "Should preserve global variable")
+
+        guard case .number(let value, _) = elements[3] else {
+            Issue.record("Fourth element should be number, but got: \(elements[3])")
+            return
+        }
+        #expect(value == 1, "Should have value 1")
+    }
+
+    @Test("FORM construction with multiple parameters")
+    func formConstructionMultipleParameters() throws {
+        let processor = MacroProcessor()
+        let location = SourceLocation(file: "test.zil", line: 1, column: 1)
+
+        // Define SETG macro: SETG(VAR, VAL) -> <FORM SETG .VAR .VAL>
+        let formBody = ZILExpression.list([
+            .atom("FORM", location),
+            .atom("SETG", location),
+            .localVariable("VAR", location),
+            .localVariable("VAL", location)
+        ], location)
+
+        _ = processor.defineMacro(
+            name: "SETGLOBAL",
+            parameters: [.standard("VAR"), .standard("VAL")],
+            body: formBody,
+            at: location
+        )
+
+        // Test expansion: <SETGLOBAL SCORE 100> -> <SETG SCORE 100>
+        let result = processor.expandMacro(
+            name: "SETGLOBAL",
+            arguments: [.atom("SCORE", location), .number(100, location)],
+            at: location
+        )
+
+        guard case .success(let expanded) = result else {
+            Issue.record("FORM macro with multiple parameters should expand, but got: \(result)")
+            return
+        }
+
+        guard case .list(let elements, _) = expanded else {
+            Issue.record("Expanded result should be a list, but got: \(expanded)")
+            return
+        }
+
+        #expect(elements.count == 3, "Should have SETG + variable + value")
+
+        guard case .atom(let op, _) = elements[0] else {
+            Issue.record("First element should be SETG, but got: \(elements[0])")
+            return
+        }
+        #expect(op == "SETG", "Should be SETG operation")
+
+        guard case .atom(let varName, _) = elements[1] else {
+            Issue.record("Second element should be variable name, but got: \(elements[1])")
+            return
+        }
+        #expect(varName == "SCORE", "Should substitute VAR parameter")
+
+        guard case .number(let value, _) = elements[2] else {
+            Issue.record("Third element should be value, but got: \(elements[2])")
+            return
+        }
+        #expect(value == 100, "Should substitute VAL parameter")
+    }
+
+    @Test("FORM construction error handling")
+    func formConstructionErrorHandling() throws {
+        let processor = MacroProcessor()
+        let location = SourceLocation(file: "test.zil", line: 1, column: 1)
+
+        // Define invalid FORM macro with malformed FORM expression
+        let invalidFormBody = ZILExpression.list([
+            .atom("FORM", location)
+            // Missing operation - should cause FORM construction to fail gracefully
+        ], location)
+
+        _ = processor.defineMacro(
+            name: "INVALID-FORM",
+            parameters: [],
+            body: invalidFormBody,
+            at: location
+        )
+
+        // Test expansion - should fall back to regular substitution when FORM fails
+        let result = processor.expandMacro(
+            name: "INVALID-FORM",
+            arguments: [],
+            at: location
+        )
+
+        guard case .success(let expanded) = result else {
+            Issue.record("Even invalid FORM should not cause macro expansion to fail completely, but got: \(result)")
+            return
+        }
+
+        // Should fall back to the original FORM expression with substitutions applied
+        guard case .list(let elements, _) = expanded else {
+            Issue.record("Should fall back to list expression, but got: \(expanded)")
+            return
+        }
+
+        guard case .atom(let formAtom, _) = elements[0] else {
+            Issue.record("Should preserve FORM atom, but got: \(elements[0])")
+            return
+        }
+        #expect(formAtom == "FORM", "Should preserve FORM keyword in fallback")
+    }
+
+    @Test("FORM construction with nested expressions")
+    func formConstructionNestedExpressions() throws {
+        let processor = MacroProcessor()
+        let location = SourceLocation(file: "test.zil", line: 1, column: 1)
+
+        // Define macro that creates FORM with nested expressions
+        // COND-SET(VAR, COND, VAL) -> <FORM COND .COND <FORM SETG .VAR .VAL>>
+        let innerForm = ZILExpression.list([
+            .atom("FORM", location),
+            .atom("SETG", location),
+            .localVariable("VAR", location),
+            .localVariable("VAL", location)
+        ], location)
+
+        let outerForm = ZILExpression.list([
+            .atom("FORM", location),
+            .atom("COND", location),
+            .localVariable("COND-PARAM", location),  // Changed parameter name to avoid collision
+            innerForm
+        ], location)
+
+        _ = processor.defineMacro(
+            name: "COND-SET",
+            parameters: [.standard("VAR"), .standard("COND-PARAM"), .standard("VAL")],
+            body: outerForm,
+            at: location
+        )
+
+        // Test expansion
+        let result = processor.expandMacro(
+            name: "COND-SET",
+            arguments: [
+                .atom("WINNER", location),
+                .atom("T", location),
+                .number(1, location)
+            ],
+            at: location
+        )
+
+        guard case .success(let expanded) = result else {
+            Issue.record("Nested FORM macro should expand, but got: \(result)")
+            return
+        }
+
+        // Should expand to: <COND T <SETG WINNER 1>>
+        guard case .list(let elements, _) = expanded else {
+            Issue.record("Result should be a list, but got: \(expanded)")
+            return
+        }
+
+        #expect(elements.count == 3, "Should have COND + condition + action")
+
+        guard case .atom(let condOp, _) = elements[0] else {
+            Issue.record("First element should be COND, but got: \(elements[0])")
+            return
+        }
+        #expect(condOp == "COND", "Should be COND operation")
+
+        guard case .atom(let condition, _) = elements[1] else {
+            Issue.record("Second element should be condition, but got: \(elements[1])")
+            return
+        }
+        #expect(condition == "T", "Should substitute condition parameter")
+
+        // Check the nested SETG form
+        guard case .list(let nestedElements, _) = elements[2] else {
+            Issue.record("Third element should be nested list, but got: \(elements[2])")
+            return
+        }
+        #expect(nestedElements.count == 3, "Nested form should have SETG + var + val")
+
+        guard case .atom(let setgOp, _) = nestedElements[0] else {
+            Issue.record("Nested first element should be SETG, but got: \(nestedElements[0])")
+            return
+        }
+        #expect(setgOp == "SETG", "Nested form should start with SETG")
     }
 }

@@ -38,8 +38,32 @@ public indirect enum ZILExpression: Sendable, Equatable {
     /// List expression - S-expression with multiple elements (e.g., `<TELL "Hello">`)
     case list([ZILExpression], SourceLocation)
 
+    /// Table literal - array/table initialization (e.g., `<ITABLE 10 5 2>`, `<LTABLE "STR1" "STR2">`)
+    case table(ZILTableType, [ZILExpression], SourceLocation)
+
     /// Indirection expression - runtime dereference (e.g., `!ATOM`, `!,GLOBAL`)
     case indirection(ZILExpression, SourceLocation)
+}
+
+/// ZIL table types for different kinds of table literals.
+///
+/// ZIL supports various table types with different storage characteristics
+/// and initialization patterns.
+public enum ZILTableType: Sendable, Equatable {
+    /// ITABLE - Integer table with initial values
+    case itable
+
+    /// LTABLE - Length-prefixed table
+    case ltable
+
+    /// TABLE - Basic table without length prefix
+    case table
+
+    /// PTABLE - Property table
+    case ptable
+
+    /// BTABLE - Byte table for character data
+    case btable
 }
 
 /// ZIL declaration types representing top-level definitions.
@@ -79,6 +103,18 @@ public enum ZILDeclaration: Sendable, Equatable {
 
     /// Direction definitions directive
     case directions(ZILDirectionsDeclaration)
+
+    /// Parser syntax rule definition
+    case syntax(ZILSyntaxDeclaration)
+
+    /// Word synonym definition
+    case synonym(ZILSynonymDeclaration)
+
+    /// Macro definition
+    case defmac(ZILDefmacDeclaration)
+
+    /// Buzzword definition (ignored words)
+    case buzz(ZILBuzzDeclaration)
 }
 
 /// Parameter with optional default value.
@@ -98,6 +134,42 @@ public struct ZILParameter: Sendable, Equatable {
         self.name = name
         self.defaultValue = defaultValue
         self.location = location
+    }
+}
+
+/// Macro parameter types for DEFMAC declarations.
+///
+/// ZIL macros support various parameter patterns including variable arguments,
+/// quoted parameters, and optional parameters.
+public enum ZILMacroParameter: Sendable, Equatable {
+    /// Standard parameter name
+    case standard(String)
+
+    /// Variable arguments parameter ("ARGS" paramName)
+    case variableArgs(String)
+
+    /// Quoted parameter ('paramName)
+    case quoted(String)
+
+    /// Optional parameter ("OPTIONAL" paramName)
+    case optional(String, ZILExpression?)
+
+    /// Get the parameter name regardless of type
+    public var name: String {
+        switch self {
+        case .standard(let name), .variableArgs(let name), .quoted(let name):
+            return name
+        case .optional(let name, _):
+            return name
+        }
+    }
+
+    /// Check if this parameter accepts multiple arguments
+    public var isVariadic: Bool {
+        if case .variableArgs = self {
+            return true
+        }
+        return false
     }
 }
 
@@ -335,6 +407,107 @@ public struct ZILDirectionsDeclaration: Sendable, Equatable {
     }
 }
 
+/// Parser syntax rule declaration.
+///
+/// The SYNTAX directive defines parser grammar rules for command recognition.
+/// Example: SYNTAX TAKE OBJECT (FIND TAKEBIT) (ON GROUND) = V-TAKE
+public struct ZILSyntaxDeclaration: Sendable, Equatable {
+    /// The verb being defined
+    public let verb: String
+    /// Syntax pattern elements
+    public let pattern: [ZILSyntaxElement]
+    /// Action routine to call
+    public let action: String
+    /// Source location of the declaration
+    public let location: SourceLocation
+
+    public init(verb: String, pattern: [ZILSyntaxElement], action: String, location: SourceLocation) {
+        self.verb = verb
+        self.pattern = pattern
+        self.action = action
+        self.location = location
+    }
+}
+
+/// Syntax pattern element for SYNTAX declarations.
+///
+/// Represents different types of elements in syntax patterns like OBJECT, prepositions, etc.
+public indirect enum ZILSyntaxElement: Sendable, Equatable {
+    /// Object reference with optional constraints
+    case object(String, constraints: [ZILExpression])
+    /// Literal preposition or word
+    case preposition(String)
+    /// Optional element
+    case optional(ZILSyntaxElement)
+}
+
+/// Word synonym declaration.
+///
+/// The SYNONYM directive defines word equivalencies for the parser.
+/// Example: SYNONYM LAMP LIGHT LANTERN = LAMP
+public struct ZILSynonymDeclaration: Sendable, Equatable {
+    /// List of synonym words
+    public let words: [String]
+    /// The canonical word they map to
+    public let canonical: String
+    /// Source location of the declaration
+    public let location: SourceLocation
+
+    public init(words: [String], canonical: String, location: SourceLocation) {
+        self.words = words
+        self.canonical = canonical
+        self.location = location
+    }
+}
+
+/// Macro definition declaration.
+///
+/// The DEFMAC directive defines preprocessor macros with parameters and body.
+/// Example: DEFMAC ENABLE ('INT) <FORM PUT .INT ,C-ENABLED? 1>>
+public struct ZILDefmacDeclaration: Sendable, Equatable {
+    /// Macro name
+    public let name: String
+    /// Parameter list with type information
+    public let parameters: [ZILMacroParameter]
+    /// Macro body expression
+    public let body: ZILExpression
+    /// Source location of the declaration
+    public let location: SourceLocation
+
+    public init(name: String, parameters: [ZILMacroParameter], body: ZILExpression, location: SourceLocation) {
+        self.name = name
+        self.parameters = parameters
+        self.body = body
+        self.location = location
+    }
+
+    /// Get parameter names for compatibility with existing code
+    public var parameterNames: [String] {
+        return parameters.map { $0.name }
+    }
+
+    /// Check if this macro accepts variable arguments
+    public var hasVariableArgs: Bool {
+        return parameters.contains { $0.isVariadic }
+    }
+}
+
+/// Buzzword declaration.
+///
+/// The BUZZ directive defines words that should be ignored by the parser.
+/// Example: BUZZ A AN THE OF AND TO
+public struct ZILBuzzDeclaration: Sendable, Equatable {
+    /// List of buzzwords to ignore
+    public let words: [String]
+    /// Source location of the declaration
+    public let location: SourceLocation
+
+    public init(words: [String], location: SourceLocation) {
+        self.words = words
+        self.location = location
+    }
+}
+
 // MARK: - ZILNode Conformance
 
 extension ZILExpression: ZILNode {
@@ -348,6 +521,7 @@ extension ZILExpression: ZILNode {
              .propertyReference(_, let location),
              .flagReference(_, let location),
              .list(_, let location),
+             .table(_, _, let location),
              .indirection(_, let location):
             return location
         }
@@ -379,6 +553,14 @@ extension ZILDeclaration: ZILNode {
             return set.location
         case .directions(let directions):
             return directions.location
+        case .syntax(let syntax):
+            return syntax.location
+        case .synonym(let synonym):
+            return synonym.location
+        case .defmac(let defmac):
+            return defmac.location
+        case .buzz(let buzz):
+            return buzz.location
         }
     }
 }
@@ -395,3 +577,7 @@ extension ZILPrincDeclaration: ZILNode {}
 extension ZILSnameDeclaration: ZILNode {}
 extension ZILSetDeclaration: ZILNode {}
 extension ZILDirectionsDeclaration: ZILNode {}
+extension ZILSyntaxDeclaration: ZILNode {}
+extension ZILSynonymDeclaration: ZILNode {}
+extension ZILDefmacDeclaration: ZILNode {}
+extension ZILBuzzDeclaration: ZILNode {}

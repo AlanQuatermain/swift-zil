@@ -6,8 +6,8 @@ public struct ZILMacroDefinition: Sendable, Equatable {
     /// The name of the macro
     public let name: String
 
-    /// Parameter names for the macro
-    public let parameters: [String]
+    /// Parameter specifications for the macro
+    public let parameters: [ZILMacroParameter]
 
     /// The body expression of the macro (template to expand)
     public let body: ZILExpression
@@ -20,7 +20,7 @@ public struct ZILMacroDefinition: Sendable, Equatable {
 
     public init(
         name: String,
-        parameters: [String],
+        parameters: [ZILMacroParameter],
         body: ZILExpression,
         definition: SourceLocation,
         isBuiltIn: Bool = false
@@ -30,6 +30,44 @@ public struct ZILMacroDefinition: Sendable, Equatable {
         self.body = body
         self.definition = definition
         self.isBuiltIn = isBuiltIn
+    }
+
+    /// Get parameter names for compatibility with existing code
+    public var parameterNames: [String] {
+        return parameters.map { $0.name }
+    }
+
+    /// Check if this macro accepts variable arguments
+    public var hasVariableArgs: Bool {
+        return parameters.contains { $0.isVariadic }
+    }
+
+    /// Get the minimum number of required arguments
+    public var minimumArguments: Int {
+        var count = 0
+        for param in parameters {
+            switch param {
+            case .standard, .quoted:
+                count += 1
+            case .variableArgs:
+                // Variable args require 0 or more
+                break
+            case .optional:
+                // Optional parameters don't add to minimum
+                break
+            }
+        }
+        return count
+    }
+
+    /// Get the maximum number of arguments (nil if unlimited)
+    public var maximumArguments: Int? {
+        // If we have variable args, there's no maximum
+        if hasVariableArgs {
+            return nil
+        }
+        // Otherwise, count all parameters including optionals
+        return parameters.count
     }
 }
 
@@ -95,6 +133,12 @@ public final class MacroProcessor: Sendable {
 
         /// Whether debug tracing is enabled
         var debugTracing: Bool = false
+
+        /// Compile-time constants for evaluation
+        var constants: [String: ZILExpression] = [:]
+
+        /// Compile-time evaluator
+        var evaluator: CompileTimeEvaluator = CompileTimeEvaluator()
     }
 
     private let state: Mutex<State>
@@ -107,7 +151,7 @@ public final class MacroProcessor: Sendable {
     /// Define a new macro
     public func defineMacro(
         name: String,
-        parameters: [String],
+        parameters: [ZILMacroParameter],
         body: ZILExpression,
         at location: SourceLocation
     ) -> Bool {
@@ -158,10 +202,22 @@ public final class MacroProcessor: Sendable {
                 return .error(diagnostic)
             }
 
-            // Check argument count
-            guard arguments.count == macro.parameters.count else {
+            // Check argument count with support for variable arguments
+            let minArgs = macro.minimumArguments
+            let maxArgs = macro.maximumArguments
+
+            if arguments.count < minArgs {
                 let diagnostic = MacroDiagnostic(
-                    code: .argumentCountMismatch(expected: macro.parameters.count, got: arguments.count),
+                    code: .argumentCountMismatch(expected: minArgs, got: arguments.count),
+                    location: location
+                )
+                state.diagnostics.append(diagnostic)
+                return .error(diagnostic)
+            }
+
+            if let maxArgs = maxArgs, arguments.count > maxArgs {
+                let diagnostic = MacroDiagnostic(
+                    code: .argumentCountMismatch(expected: maxArgs, got: arguments.count),
                     location: location
                 )
                 state.diagnostics.append(diagnostic)
@@ -184,16 +240,41 @@ public final class MacroProcessor: Sendable {
                 state.expansionStack.removeLast()
             }
 
-            // Create parameter substitution map
+            // Create parameter substitution map with support for variable arguments
             var substitutions: [String: ZILExpression] = [:]
-            for (parameter, argument) in zip(macro.parameters, arguments) {
-                substitutions[parameter] = argument
+            var argumentIndex = 0
+
+            for parameter in macro.parameters {
+                switch parameter {
+                case .standard(let name), .quoted(let name):
+                    if argumentIndex < arguments.count {
+                        substitutions[name] = arguments[argumentIndex]
+                        argumentIndex += 1
+                    }
+
+                case .variableArgs(let name):
+                    // Collect remaining arguments into a list
+                    let remainingArgs = Array(arguments[argumentIndex...])
+                    let argsList = ZILExpression.list(remainingArgs, location)
+                    substitutions[name] = argsList
+                    argumentIndex = arguments.count // Consume all remaining arguments
+
+                case .optional(let name, let defaultValue):
+                    if argumentIndex < arguments.count {
+                        substitutions[name] = arguments[argumentIndex]
+                        argumentIndex += 1
+                    } else if let defaultValue = defaultValue {
+                        substitutions[name] = defaultValue
+                    }
+                    // If no default value and no argument provided, parameter remains unbound
+                }
             }
 
             // Perform expansion with direct substitution (ZIL style)
-            let expandedBody = expandExpressionWithSubstitution(
+            let expandedBody = expandExpressionWithSubstitutionInternal(
                 macro.body,
-                substitutions: substitutions
+                substitutions: substitutions,
+                state: &state
             )
 
             // Add to trace if debugging
@@ -228,10 +309,22 @@ public final class MacroProcessor: Sendable {
             return .error(diagnostic)
         }
 
-        // Check argument count
-        guard arguments.count == macro.parameters.count else {
+        // Check argument count with support for variable arguments
+        let minArgs = macro.minimumArguments
+        let maxArgs = macro.maximumArguments
+
+        if arguments.count < minArgs {
             let diagnostic = MacroDiagnostic(
-                code: .argumentCountMismatch(expected: macro.parameters.count, got: arguments.count),
+                code: .argumentCountMismatch(expected: minArgs, got: arguments.count),
+                location: location
+            )
+            state.diagnostics.append(diagnostic)
+            return .error(diagnostic)
+        }
+
+        if let maxArgs = maxArgs, arguments.count > maxArgs {
+            let diagnostic = MacroDiagnostic(
+                code: .argumentCountMismatch(expected: maxArgs, got: arguments.count),
                 location: location
             )
             state.diagnostics.append(diagnostic)
@@ -254,16 +347,41 @@ public final class MacroProcessor: Sendable {
             state.expansionStack.removeLast()
         }
 
-        // Create parameter substitution map
+        // Create parameter substitution map with support for variable arguments
         var substitutions: [String: ZILExpression] = [:]
-        for (parameter, argument) in zip(macro.parameters, arguments) {
-            substitutions[parameter] = argument
+        var argumentIndex = 0
+
+        for parameter in macro.parameters {
+            switch parameter {
+            case .standard(let name), .quoted(let name):
+                if argumentIndex < arguments.count {
+                    substitutions[name] = arguments[argumentIndex]
+                    argumentIndex += 1
+                }
+
+            case .variableArgs(let name):
+                // Collect remaining arguments into a list
+                let remainingArgs = Array(arguments[argumentIndex...])
+                let argsList = ZILExpression.list(remainingArgs, location)
+                substitutions[name] = argsList
+                argumentIndex = arguments.count // Consume all remaining arguments
+
+            case .optional(let name, let defaultValue):
+                if argumentIndex < arguments.count {
+                    substitutions[name] = arguments[argumentIndex]
+                    argumentIndex += 1
+                } else if let defaultValue = defaultValue {
+                    substitutions[name] = defaultValue
+                }
+                // If no default value and no argument provided, parameter remains unbound
+            }
         }
 
         // Perform expansion with direct substitution (ZIL style)
-        let expandedBody = expandExpressionWithSubstitution(
+        let expandedBody = expandExpressionWithSubstitutionInternal(
             macro.body,
-            substitutions: substitutions
+            substitutions: substitutions,
+            state: &state
         )
 
         // Add to trace if debugging
@@ -325,12 +443,53 @@ public final class MacroProcessor: Sendable {
         }
     }
 
+    /// Define a compile-time constant
+    public func defineConstant(name: String, value: ZILExpression) {
+        state.withLock { state in
+            state.constants[name] = value
+            // Update evaluator with new constants
+            state.evaluator = CompileTimeEvaluator(constants: state.constants)
+        }
+    }
+
+    /// Get a compile-time constant
+    public func getConstant(name: String) -> ZILExpression? {
+        return state.withLock { state in
+            state.constants[name]
+        }
+    }
+
+    /// Get all compile-time constants
+    public func getAllConstants() -> [String: ZILExpression] {
+        return state.withLock { state in
+            state.constants
+        }
+    }
+
+    /// Evaluate an expression at compile time
+    public func evaluateExpression(_ expression: ZILExpression) -> EvaluationResult {
+        return state.withLock { state in
+            state.evaluator.evaluate(expression)
+        }
+    }
+
     // MARK: - Private Implementation
 
     /// Expand expression with parameter substitution (no hygiene - ZIL uses direct substitution)
     private func expandExpressionWithSubstitution(
         _ expr: ZILExpression,
         substitutions: [String: ZILExpression]
+    ) -> ZILExpression {
+        return state.withLock { state in
+            expandExpressionWithSubstitutionInternal(expr, substitutions: substitutions, state: &state)
+        }
+    }
+
+    /// Internal implementation of expression expansion with substitution
+    private func expandExpressionWithSubstitutionInternal(
+        _ expr: ZILExpression,
+        substitutions: [String: ZILExpression],
+        state: inout State
     ) -> ZILExpression {
         switch expr {
         case .atom(let name, _):
@@ -342,10 +501,66 @@ public final class MacroProcessor: Sendable {
             return substitutions[name] ?? expr
 
         case .list(let elements, let location):
-            let expandedElements = elements.map { element in
-                expandExpressionWithSubstitution(element, substitutions: substitutions)
+            // Check if this is an EVAL expression for compile-time evaluation
+            if let firstElement = elements.first,
+               case .atom("EVAL", _) = firstElement,
+               elements.count == 2 {
+                // Process EVAL: <EVAL expression> -> evaluate expression at compile time
+                let exprToEvaluate = expandExpressionWithSubstitutionInternal(elements[1], substitutions: substitutions, state: &state)
+
+                let evaluationResult = state.evaluator.evaluate(exprToEvaluate)
+
+                switch evaluationResult {
+                case .success(let result):
+                    return result
+                case .error(_):
+                    // If evaluation fails, return the original expression
+                    let expandedElements = elements.map { element in
+                        expandExpressionWithSubstitutionInternal(element, substitutions: substitutions, state: &state)
+                    }
+                    return .list(expandedElements, location)
+                case .notEvaluable:
+                    // If not evaluable, return the original expression
+                    let expandedElements = elements.map { element in
+                        expandExpressionWithSubstitutionInternal(element, substitutions: substitutions, state: &state)
+                    }
+                    return .list(expandedElements, location)
+                }
             }
-            return .list(expandedElements, location)
+            // Check if this is a FORM expression that needs special handling
+            else if FormBuilder.isFormExpression(.list(elements, location)) {
+                // Process FORM construction
+                let formResult = FormBuilder.buildForm(.list(elements, location), substitutions: substitutions, at: location)
+                switch formResult {
+                case .success(let builtExpression):
+                    // Recursively expand any nested FORM constructs in the built expression
+                    return expandExpressionWithSubstitutionInternal(builtExpression, substitutions: substitutions, state: &state)
+                case .error(_):
+                    // If FORM construction fails, fall back to regular substitution
+                    let expandedElements = elements.map { element in
+                        expandExpressionWithSubstitutionInternal(element, substitutions: substitutions, state: &state)
+                    }
+                    return .list(expandedElements, location)
+                }
+            } else {
+                // Regular list - apply substitutions recursively
+                let expandedElements = elements.map { element in
+                    expandExpressionWithSubstitutionInternal(element, substitutions: substitutions, state: &state)
+                }
+                return .list(expandedElements, location)
+            }
+
+        case .table(let tableType, let elements, let location):
+            // Apply substitutions to table elements
+            let expandedElements = elements.map { element in
+                expandExpressionWithSubstitutionInternal(element, substitutions: substitutions, state: &state)
+            }
+            return .table(tableType, expandedElements, location)
+
+        case .indirection(let targetExpression, let location):
+            // Apply substitutions to indirection target
+            let expandedTarget = expandExpressionWithSubstitutionInternal(targetExpression, substitutions: substitutions, state: &state)
+            return .indirection(expandedTarget, location)
 
         default:
             // For other expression types, return as-is (no nested substitution needed)
@@ -375,9 +590,12 @@ public final class MacroProcessor: Sendable {
                     return expr
                 }
 
-                // Check argument count
-                guard arguments.count == macro.parameters.count else {
-                    return expr
+                // Check argument count with support for variable arguments
+                let minArgs = macro.minimumArguments
+                let maxArgs = macro.maximumArguments
+
+                if arguments.count < minArgs || (maxArgs != nil && arguments.count > maxArgs!) {
+                    return expr // Return original expression if argument count doesn't match
                 }
 
                 // Add to expansion stack
@@ -386,16 +604,41 @@ public final class MacroProcessor: Sendable {
                     state.expansionStack.removeLast()
                 }
 
-                // Create parameter substitution map
+                // Create parameter substitution map with support for variable arguments
                 var substitutions: [String: ZILExpression] = [:]
-                for (parameter, argument) in zip(macro.parameters, arguments) {
-                    substitutions[parameter] = argument
+                var argumentIndex = 0
+
+                for parameter in macro.parameters {
+                    switch parameter {
+                    case .standard(let name), .quoted(let name):
+                        if argumentIndex < arguments.count {
+                            substitutions[name] = arguments[argumentIndex]
+                            argumentIndex += 1
+                        }
+
+                    case .variableArgs(let name):
+                        // Collect remaining arguments into a list
+                        let remainingArgs = Array(arguments[argumentIndex...])
+                        let argsList = ZILExpression.list(remainingArgs, location)
+                        substitutions[name] = argsList
+                        argumentIndex = arguments.count // Consume all remaining arguments
+
+                    case .optional(let name, let defaultValue):
+                        if argumentIndex < arguments.count {
+                            substitutions[name] = arguments[argumentIndex]
+                            argumentIndex += 1
+                        } else if let defaultValue = defaultValue {
+                            substitutions[name] = defaultValue
+                        }
+                        // If no default value and no argument provided, parameter remains unbound
+                    }
                 }
 
                 // Perform expansion with direct substitution
-                let expandedBody = expandExpressionWithSubstitution(
+                let expandedBody = expandExpressionWithSubstitutionInternal(
                     macro.body,
-                    substitutions: substitutions
+                    substitutions: substitutions,
+                    state: &state
                 )
 
                 // Recursively expand the result while keeping this macro on the stack

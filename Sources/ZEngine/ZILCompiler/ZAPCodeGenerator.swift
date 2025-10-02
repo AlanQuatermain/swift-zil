@@ -242,6 +242,7 @@ public struct ZAPCodeGenerator {
         var objects: [String] = []
         var strings: [String] = []
         var functions: [String] = []
+        var tables: [(String, ZILTableType, [String])] = [] // (name, type, elements)
 
         mutating func addConstant(_ name: String, value: ZValue) {
             constants.append((name, value))
@@ -278,6 +279,12 @@ public struct ZAPCodeGenerator {
             if !functions.contains(name) {
                 functions.append(name)
             }
+        }
+
+        mutating func addTable(_ name: String, type: ZILTableType, elements: [String]) -> String {
+            let tableName = "TBL\(tables.count)"
+            tables.append((tableName, type, elements))
+            return tableName
         }
     }
 
@@ -358,6 +365,9 @@ public struct ZAPCodeGenerator {
         // Generate strings section
         try generateStringsSection()
 
+        // Generate tables section
+        try generateTablesSection()
+
         // Generate footer
         try generateFooter()
 
@@ -430,6 +440,26 @@ public struct ZAPCodeGenerator {
                 let constantName = "P?\(direction.uppercased())"
                 memoryLayout.addConstant(constantName, value: .number(Int16(index + 1)))
             }
+
+        case .syntax(_):
+            // TODO: SYNTAX rules will need parser table generation
+            // For now, just skip during analysis phase
+            break
+
+        case .synonym(_):
+            // TODO: SYNONYM declarations will need dictionary management
+            // For now, just skip during analysis phase
+            break
+
+        case .defmac(_):
+            // DEFMAC declarations are handled during preprocessing
+            // They should not appear in the final declaration list for code generation
+            break
+
+        case .buzz(_):
+            // TODO: BUZZ declarations will need parser configuration
+            // For now, just skip during analysis phase
+            break
 
         case .insertFile(_):
             // INSERT-FILE declarations should have been processed by the parser
@@ -613,6 +643,33 @@ public struct ZAPCodeGenerator {
 
         for (index, string) in memoryLayout.strings.enumerated() {
             output.append(".STRING STR\(index) \"\(escapeString(string))\"")
+        }
+        output.append("")
+    }
+
+    // MARK: - Tables Section
+
+    private mutating func generateTablesSection() throws {
+        guard !memoryLayout.tables.isEmpty else { return }
+
+        output.append("; ===== TABLES SECTION =====")
+        output.append("")
+
+        for (tableName, tableType, elements) in memoryLayout.tables {
+            let typeDirective: String
+            switch tableType {
+            case .itable:
+                typeDirective = ".ITABLE"
+            case .ltable:
+                typeDirective = ".LTABLE"
+            case .table:
+                typeDirective = ".TABLE"
+            case .ptable:
+                typeDirective = ".PTABLE"
+            case .btable:
+                typeDirective = ".BTABLE"
+            }
+            output.append("\(typeDirective) \(tableName) \(elements.joined(separator: " "))")
         }
         output.append("")
     }
@@ -979,6 +1036,9 @@ public struct ZAPCodeGenerator {
 
         case .list(let elements, let location):
             return try generateListExpressionWithBuilder(elements, at: location, using: builder)
+
+        case .table(let tableType, let elements, let location):
+            return try generateTableLiteral(tableType, elements: elements, at: location, using: builder)
 
         case .indirection(let targetExpression, _):
             // Generate code for indirection - dereference the target at runtime
@@ -2586,7 +2646,44 @@ public struct ZAPCodeGenerator {
             output.append("; Properties: \(memoryLayout.properties.count)")
             output.append("; Constants: \(memoryLayout.constants.count)")
             output.append("; Strings: \(memoryLayout.strings.count)")
+            output.append("; Tables: \(memoryLayout.tables.count)")
             output.append("; Target Version: Z-Machine v\(version.rawValue)")
+        }
+    }
+
+    // MARK: - Table Literal Generation
+
+    /// Generates proper ZAP code for different ZIL table types
+    private mutating func generateTableLiteral(_ tableType: ZILTableType, elements: [ZILExpression], at location: SourceLocation, using builder: InstructionBuilder) throws -> String {
+        // Generate element values
+        let elementCodes = try elements.map { element in
+            try generateExpression(element, using: builder)
+        }
+
+        switch tableType {
+        case .itable, .ltable, .table:
+            // Standard table types - register with memory layout
+            return memoryLayout.addTable("", type: tableType, elements: elementCodes)
+
+        case .ptable:
+            // PTABLE - Property table (for object properties)
+            // Properties are stored as property-id/value pairs
+            guard elements.count % 2 == 0 else {
+                throw CodeGenerationError(.invalidInstruction("PTABLE requires even number of elements (property-value pairs)"), at: location)
+            }
+            return memoryLayout.addTable("", type: tableType, elements: elementCodes)
+
+        case .btable:
+            // BTABLE - Byte table for character/byte data
+            // Each element should be a byte value (0-255)
+            for (index, element) in elements.enumerated() {
+                if case .number(let value, _) = element {
+                    if value < 0 || value > 255 {
+                        throw CodeGenerationError(.invalidInstruction("BTABLE element \(index) value \(value) must be 0-255"), at: location)
+                    }
+                }
+            }
+            return memoryLayout.addTable("", type: tableType, elements: elementCodes)
         }
     }
 }
