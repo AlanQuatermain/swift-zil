@@ -13,23 +13,46 @@ public class AutoplayInstructionManager {
         let originalPattern: String
     }
 
+    /// Wound level enum for diagnosis
+    enum WoundLevel: Int {
+        case healthy = 0
+        case light = 1
+        case serious = 2
+        case several = 3
+        case critical = 4
+    }
+
+    // MARK: - Static Compiled Regexes for Diagnosis
+
+    private nonisolated(unsafe) static let perfectHealthRegex = try! Regex(#"(?i)\bperfect health\b"#)
+    private nonisolated(unsafe) static let lightWoundRegex = try! Regex(#"(?i)\blight wound\b"#)
+    private nonisolated(unsafe) static let seriousWoundRegex = try! Regex(#"(?i)\bserious wound\b"#)
+    private nonisolated(unsafe) static let severalWoundsRegex = try! Regex(#"(?i)\bseveral wounds\b"#)
+    private nonisolated(unsafe) static let seriousWoundsRegex = try! Regex(#"(?i)\bserious wounds\b"#)
+
     /// Represents different types of instruction directives
     public enum InstructionDirective {
         case command(String)                    // Plain command to send to game
         case setCounter(String, Int)            // !SET counter = value
+        case regex(String, String)              // !REGEX name = "pattern"
         case trackPattern(String, String)       // !TRACK regex "pattern" counter
         case loop                               // !LOOP
         case until(String)                      // !UNTIL regex "pattern"
+        case untilRef(String)                   // !UNTIL regex name
+        case ifRegex(String)                    // !IF regex "pattern" THEN
+        case ifRegexRef(String)                 // !IF regex name THEN
         case ifCounter(String, String, Int)     // !IFCOUNTER name op value THEN
         case end                                // !END
         case wait(Int)                          // !WAIT turns
         case heal(String?)                      // !HEAL [counter]
+        case diagnose(String)                   // !DIAGNOSE counter
         case waitUntil(String)                  // !WAIT-UNTIL regex "pattern"
     }
 
     /// Current execution state
     public struct AutoplayState {
         var counters: [String: Int] = [:]
+        var regexes: [String: Regex<AnyRegexOutput>] = [:]     // Compiled named regexes from !REGEX directive
         var currentInstructionIndex: Int = 0
         var loopStack: [Int] = []               // Stack of loop start positions for nested loops
         var commandQueue: [String] = []         // Queue for multi-command sequences like !HEAL and !WAIT
@@ -38,6 +61,7 @@ public class AutoplayInstructionManager {
         var lastInputWasEmpty: Bool = false     // Track if last manual input was empty (for timing)
         var activeTrackPatterns: [CompiledTrackPattern] = [] // Currently active track patterns in scope
         var outputBuffer: String = ""           // Accumulate output text for pattern matching
+        var pendingDiagnoseCounter: String? = nil  // Counter to update after diagnose command
     }
 
     /// Configuration for autoplay execution
@@ -157,12 +181,16 @@ public class AutoplayInstructionManager {
         switch directive {
         case "!SET":
             return try parseSetDirective(parts)
+        case "!REGEX":
+            return try parseRegexDirective(parts)
         case "!TRACK":
             return try parseTrackDirective(parts)
         case "!LOOP":
             return .loop
         case "!UNTIL":
             return try parseUntilDirective(parts)
+        case "!IF":
+            return try parseIfDirective(parts)
         case "!IFCOUNTER":
             return try parseIfCounterDirective(parts)
         case "!END":
@@ -173,6 +201,8 @@ public class AutoplayInstructionManager {
             return try parseWaitUntilDirective(parts)
         case "!HEAL":
             return try parseHealDirective(parts)
+        case "!DIAGNOSE":
+            return try parseDiagnoseDirective(parts)
         default:
             throw InstructionError.parseError("Unknown directive: \(directive)")
         }
@@ -191,6 +221,27 @@ public class AutoplayInstructionManager {
         }
 
         return .setCounter(counter, value)
+    }
+
+    /// Parse !REGEX name = "pattern"
+    private func parseRegexDirective(_ parts: [String]) throws -> InstructionDirective {
+        guard parts.count >= 4,
+              parts[2] == "=" else {
+            throw InstructionError.parseError("!REGEX requires format: !REGEX name = \"pattern\"")
+        }
+
+        let name = parts[1]
+
+        // Find quoted pattern
+        let fullLine = parts.joined(separator: " ")
+        guard let patternStart = fullLine.firstIndex(of: "\""),
+              let patternEnd = fullLine.lastIndex(of: "\""),
+              patternStart != patternEnd else {
+            throw InstructionError.parseError("!REGEX pattern must be quoted")
+        }
+
+        let pattern = String(fullLine[fullLine.index(after: patternStart)..<patternEnd])
+        return .regex(name, pattern)
     }
 
     /// Parse !TRACK regex "pattern" counter
@@ -214,23 +265,56 @@ public class AutoplayInstructionManager {
         return .trackPattern(pattern, counter)
     }
 
-    /// Parse !UNTIL regex "pattern"
+    /// Parse !IF regex "pattern" THEN or !IF regex name THEN
+    private func parseIfDirective(_ parts: [String]) throws -> InstructionDirective {
+        guard parts.count >= 4,
+              parts[1].uppercased() == "REGEX",
+              parts.last?.uppercased() == "THEN" else {
+            throw InstructionError.parseError("!IF requires format: !IF regex \"pattern\" THEN or !IF regex name THEN")
+        }
+
+        // Check if it's a quoted pattern or a reference
+        let fullLine = parts.joined(separator: " ")
+        if let patternStart = fullLine.firstIndex(of: "\""),
+           let patternEnd = fullLine.lastIndex(of: "\""),
+           patternStart != patternEnd {
+            // Quoted pattern - inline regex
+            let pattern = String(fullLine[fullLine.index(after: patternStart)..<patternEnd])
+            return .ifRegex(pattern)
+        } else {
+            // No quotes - reference to named regex
+            // Format: !IF regex name THEN
+            guard parts.count >= 4 else {
+                throw InstructionError.parseError("!IF requires regex name or quoted pattern")
+            }
+            let name = parts[2]
+            return .ifRegexRef(name)
+        }
+    }
+
+    /// Parse !UNTIL regex "pattern" or !UNTIL regex name
     private func parseUntilDirective(_ parts: [String]) throws -> InstructionDirective {
         guard parts.count >= 3,
               parts[1].uppercased() == "REGEX" else {
-            throw InstructionError.parseError("!UNTIL requires format: !UNTIL regex \"pattern\"")
+            throw InstructionError.parseError("!UNTIL requires format: !UNTIL regex \"pattern\" or !UNTIL regex name")
         }
 
-        // Find quoted pattern
+        // Check if it's a quoted pattern or a reference
         let fullLine = parts.joined(separator: " ")
-        guard let patternStart = fullLine.firstIndex(of: "\""),
-              let patternEnd = fullLine.lastIndex(of: "\""),
-              patternStart != patternEnd else {
-            throw InstructionError.parseError("!UNTIL pattern must be quoted")
+        if let patternStart = fullLine.firstIndex(of: "\""),
+           let patternEnd = fullLine.lastIndex(of: "\""),
+           patternStart != patternEnd {
+            // Quoted pattern - inline regex
+            let pattern = String(fullLine[fullLine.index(after: patternStart)..<patternEnd])
+            return .until(pattern)
+        } else {
+            // No quotes - reference to named regex
+            guard parts.count >= 3 else {
+                throw InstructionError.parseError("!UNTIL requires regex name or quoted pattern")
+            }
+            let name = parts[2]
+            return .untilRef(name)
         }
-
-        let pattern = String(fullLine[fullLine.index(after: patternStart)..<patternEnd])
-        return .until(pattern)
     }
 
     /// Parse !IFCOUNTER name op value THEN
@@ -275,6 +359,16 @@ public class AutoplayInstructionManager {
         }
     }
 
+    /// Parse !DIAGNOSE counter
+    private func parseDiagnoseDirective(_ parts: [String]) throws -> InstructionDirective {
+        guard parts.count >= 2 else {
+            throw InstructionError.parseError("!DIAGNOSE requires format: !DIAGNOSE counter")
+        }
+
+        let counter = parts[1]
+        return .diagnose(counter)
+    }
+
     /// Parse !WAIT-UNTIL regex "pattern"
     private func parseWaitUntilDirective(_ parts: [String]) throws -> InstructionDirective {
         guard parts.count >= 3,
@@ -314,7 +408,7 @@ public class AutoplayInstructionManager {
         while depth > 0 {
             guard let instruction = consumeInstruction() else { break }
             switch instruction {
-            case .ifCounter(_, _, _):
+            case .ifCounter(_, _, _), .ifRegex(_), .ifRegexRef(_):
                 depth += 1
             case .end:
                 depth -= 1
@@ -340,7 +434,15 @@ public class AutoplayInstructionManager {
             if let command = processInstruction(instruction) {
                 return command
             }
-            // No command produced, consume next instruction
+            // No command produced, but instruction may have queued something
+            // Check queue before consuming next instruction
+            if !state.commandQueue.isEmpty {
+                let command = state.commandQueue.removeFirst()
+                if config.verbosity >= 1 {
+                    print("[Autoplay] Executing queued command: \(command)")
+                }
+                return command
+            }
         }
 
         // No more instructions
@@ -355,12 +457,24 @@ public class AutoplayInstructionManager {
         // Accumulate output text for pattern matching across multiple calls
         state.outputBuffer += text
 
-        // Track output length for auto-timing (use accumulated length)
-        state.lastOutputLength = state.outputBuffer.count
+        // Track cumulative output length for auto-timing
+        state.lastOutputLength += text.count
 
         if config.verbosity >= 2 {
             print("[Autoplay] Processing output: \(text.prefix(50))\(text.count > 50 ? "..." : "") (\(text.count) chars)")
             print("[Autoplay] Total accumulated: \(state.outputBuffer.count) chars")
+        }
+
+        // Check if we're processing a diagnose command output
+        if let counterName = state.pendingDiagnoseCounter {
+            let level = woundLevel(from: state.outputBuffer)
+            state.counters[counterName] = level.rawValue
+
+            if config.verbosity >= 1 {
+                print("[Autoplay] Diagnose result: \(level) (level \(level.rawValue)), set \(counterName) = \(level.rawValue)")
+            }
+
+            state.pendingDiagnoseCounter = nil
         }
 
         // Check active track patterns against accumulated output
@@ -405,6 +519,21 @@ public class AutoplayInstructionManager {
             state.counters[name] = value
             if config.verbosity >= 2 {
                 print("[Autoplay] Set \(name) = \(value)")
+            }
+            return nil
+
+        case .regex(let name, let pattern):
+            // Compile and store the named regex
+            do {
+                let regex = try Regex(pattern)
+                state.regexes[name] = regex
+                if config.verbosity >= 2 {
+                    print("[Autoplay] Stored regex '\(name)' = \(pattern)")
+                }
+            } catch {
+                if config.verbosity >= 1 {
+                    print("[Autoplay] Warning: Failed to compile regex '\(name)': \(error)")
+                }
             }
             return nil
 
@@ -482,6 +611,93 @@ public class AutoplayInstructionManager {
                 return nil
             }
 
+        case .untilRef(let name):
+            // Check if we're in a loop and evaluate the named regex
+            guard !state.loopStack.isEmpty else {
+                if config.verbosity >= 2 {
+                    print("[Autoplay] UNTIL outside of loop, ignoring")
+                }
+                return nil
+            }
+
+            // Look up the named regex
+            guard let regex = state.regexes[name] else {
+                if config.verbosity >= 1 {
+                    print("[Autoplay] Warning: Unknown regex reference '\(name)'")
+                }
+                state.loopStack.removeLast()
+                return nil
+            }
+
+            // Check the pattern against accumulated output
+            if state.outputBuffer.firstMatch(of: regex) != nil {
+                // Pattern matched - exit the loop
+                state.loopStack.removeLast()
+                if config.verbosity >= 2 {
+                    print("[Autoplay] UNTIL regex '\(name)' matched, exiting loop")
+                }
+                return nil
+            } else {
+                // Pattern not matched - restart loop
+                let loopStart = state.loopStack.last!
+                if config.verbosity >= 2 {
+                    print("[Autoplay] UNTIL regex '\(name)' not matched, restarting loop from instruction \(loopStart)")
+                }
+                state.currentInstructionIndex = loopStart + 1  // Jump back to instruction after LOOP
+                return nil
+            }
+
+        case .ifRegex(let pattern):
+            // Check if pattern matches current output
+            do {
+                let regex = try Regex(pattern)
+                if state.outputBuffer.firstMatch(of: regex) != nil {
+                    // Pattern matched - continue with block
+                    if config.verbosity >= 2 {
+                        print("[Autoplay] IF regex pattern '\(pattern)' matched, executing block")
+                    }
+                    return nil
+                } else {
+                    // Pattern not matched - skip to END
+                    if config.verbosity >= 2 {
+                        print("[Autoplay] IF regex pattern '\(pattern)' not matched, skipping to END")
+                    }
+                    consumeUntilEnd()
+                    return nil
+                }
+            } catch {
+                if config.verbosity >= 1 {
+                    print("[Autoplay] Warning: Failed to compile IF regex pattern '\(pattern)': \(error)")
+                }
+                consumeUntilEnd()
+                return nil
+            }
+
+        case .ifRegexRef(let name):
+            // Look up named regex and check if it matches current output
+            guard let regex = state.regexes[name] else {
+                if config.verbosity >= 1 {
+                    print("[Autoplay] Warning: Unknown regex reference '\(name)'")
+                }
+                consumeUntilEnd()
+                return nil
+            }
+
+            if state.outputBuffer.firstMatch(of: regex) != nil {
+                // Pattern matched - continue with block
+                if config.verbosity >= 2 {
+                    print("[Autoplay] IF regex '\(name)' matched, executing block")
+                }
+                return nil
+            } else {
+                // Pattern not matched - skip to END
+                if config.verbosity >= 2 {
+                    print("[Autoplay] IF regex '\(name)' not matched, skipping to END")
+                }
+                consumeUntilEnd()
+                return nil
+            }
+
         case .ifCounter(let name, let op, let value):
             if evaluateCondition(name: name, operator: op, value: value) {
                 // Condition is true, continue normally
@@ -526,7 +742,7 @@ public class AutoplayInstructionManager {
             return nil
 
         case .heal(let counterName):
-            // Execute healing sequence
+            // Execute healing sequence with periodic diagnosis checks
             let wounds = counterName != nil ? state.counters[counterName!, default: 0] : 1
 
             if config.verbosity >= 1 {
@@ -545,24 +761,42 @@ public class AutoplayInstructionManager {
                 return nil
             }
 
-            // Save lamp state and queue healing sequence
+            // Save lamp state and turn off lamp
             state.savedLampState = "turn on lamp"
             state.commandQueue.append("turn off lamp")
 
-            // Queue ~35 waits per wound
-            let waitCount = wounds * 35
-            if config.verbosity >= 2 {
-                print("[Autoplay] Queuing \(waitCount) wait commands for healing (\(wounds) wounds * 35)")
-            }
-            for _ in 0..<waitCount {
-                state.commandQueue.append("wait")
-            }
-
-            // Reset counter
             if let counterName = counterName {
-                state.counters[counterName] = 0
+                // Build healing loop with periodic diagnosis checks
+                // The number of waits scales with wound level (wounds + 1)
+                let waitsPerCheck = wounds + 1
+
                 if config.verbosity >= 2 {
-                    print("[Autoplay] Reset \(counterName) counter to 0")
+                    print("[Autoplay] Setting up healing loop: wait \(waitsPerCheck), diagnose, repeat if needed")
+                }
+
+                // Insert directives at current position:
+                // !WAIT (wounds+1)
+                // !DIAGNOSE counterName
+                // !IFCOUNTER counterName > 0 THEN
+                //   !HEAL counterName
+                // !END
+                // [lamp restoration will be queued after the recursion finishes]
+
+                let waitInstruction = InstructionDirective.wait(waitsPerCheck)
+                let diagnoseInstruction = InstructionDirective.diagnose(counterName)
+                let ifCounterInstruction = InstructionDirective.ifCounter(counterName, ">", 0)
+                let healInstruction = InstructionDirective.heal(counterName)
+                let endInstruction = InstructionDirective.end
+
+                instructions.insert(contentsOf: [waitInstruction, diagnoseInstruction, ifCounterInstruction, healInstruction, endInstruction],
+                                  at: state.currentInstructionIndex)
+            } else {
+                // No counter specified, just do a fixed number of waits
+                if config.verbosity >= 2 {
+                    print("[Autoplay] Queuing 35 wait commands for basic healing")
+                }
+                for _ in 0..<35 {
+                    state.commandQueue.append("wait")
                 }
             }
 
@@ -585,15 +819,31 @@ public class AutoplayInstructionManager {
             }
             return nil
 
+        case .diagnose(let counterName):
+            // Execute diagnose command and set up to capture the output
+            if config.verbosity >= 1 {
+                print("[Autoplay] Executing diagnose and updating \(counterName) counter")
+            }
+
+            // Mark that we're expecting diagnose output for this counter
+            state.pendingDiagnoseCounter = counterName
+
+            // Return the diagnose command
+            return "diagnose"
+
         case .waitUntil(let pattern):
             // Execute wait-until sequence: keep waiting until pattern matches
             do {
                 let regex = try Regex(pattern)
 
+                if config.verbosity >= 1 {
+                    print("[Autoplay] WAIT-UNTIL checking buffer (\(state.outputBuffer.count) chars): '\(state.outputBuffer.prefix(100))'")
+                }
+
                 // Check if pattern already matches current output
                 if state.outputBuffer.firstMatch(of: regex) != nil {
                     if config.verbosity >= 1 {
-                        print("[Autoplay] WAIT-UNTIL pattern '\(pattern)' already matched, skipping")
+                        print("[Autoplay] WAIT-UNTIL pattern '\(pattern)' matched, exiting")
                     }
                     return nil
                 }
@@ -611,14 +861,7 @@ public class AutoplayInstructionManager {
                     print("[Autoplay] WAIT-UNTIL pattern '\(pattern)' not matched, queuing wait command")
                 }
 
-                // Return the first wait command
-                if !state.commandQueue.isEmpty {
-                    let command = state.commandQueue.removeFirst()
-                    if config.verbosity >= 2 {
-                        print("[Autoplay] Executing wait for pattern matching: \(command)")
-                    }
-                    return command
-                }
+                // Return nil - the queued wait will be picked up by getNextCommand()
                 return nil
 
             } catch {
@@ -720,14 +963,6 @@ public class AutoplayInstructionManager {
         return result
     }
 
-    /// Check if output processing is needed (for UNTIL conditions and pattern tracking)
-    func needsOutputProcessing() -> Bool {
-        // We need output processing if:
-        // 1. We're in a loop (for UNTIL conditions)
-        // 2. We have TRACK directives that need to match patterns
-        return !state.loopStack.isEmpty || hasActiveTrackDirectives()
-    }
-
     /// Check if manual mode is enabled
     var isManualMode: Bool {
         return config.isManualMode
@@ -741,6 +976,24 @@ public class AutoplayInstructionManager {
     /// Check if there are any active TRACK patterns that need pattern matching
     private func hasActiveTrackDirectives() -> Bool {
         return !state.activeTrackPatterns.isEmpty
+    }
+
+    /// Analyze diagnose command output and return wound level
+    private func woundLevel(from diagnoseOutput: String) -> WoundLevel {
+        // Check patterns in order from most specific to least specific
+        // "serious wounds" must be checked before "serious wound" (singular)
+        if diagnoseOutput.firstMatch(of: Self.perfectHealthRegex) != nil {
+            return .healthy
+        } else if diagnoseOutput.firstMatch(of: Self.seriousWoundsRegex) != nil {
+            return .critical
+        } else if diagnoseOutput.firstMatch(of: Self.severalWoundsRegex) != nil {
+            return .several
+        } else if diagnoseOutput.firstMatch(of: Self.seriousWoundRegex) != nil {
+            return .serious
+        } else if diagnoseOutput.firstMatch(of: Self.lightWoundRegex) != nil {
+            return .light
+        }
+        return .healthy
     }
 }
 
@@ -756,10 +1009,8 @@ class AutoplayTerminalDelegate: ZMachineTerminalDelegate {
     // MARK: - Output Handling
 
     override func didOutputText(_ text: String) {
-        // Only process output if we're in a state that needs it (like checking UNTIL conditions)
-        if manager.needsOutputProcessing() {
-            manager.processOutput(text)
-        }
+        // Always process output for timing and pattern matching
+        manager.processOutput(text)
 
         // Always call super to handle display
         super.didOutputText(text)
@@ -768,21 +1019,10 @@ class AutoplayTerminalDelegate: ZMachineTerminalDelegate {
     // MARK: - Input Handling
 
     override func readLineWrapper() -> String? {
-        // First, check if we have queued commands from !WAIT or !HEAL
-        // These should execute automatically even in manual mode
-        if !manager.state.commandQueue.isEmpty {
-            let command = manager.state.commandQueue.removeFirst()
-
-            // Clear output buffer before new command (start fresh for next output)
+        // Clear buffer and reset output length after all processing is complete
+        defer {
             manager.state.outputBuffer = ""
-
-            if manager.verbosity >= 1 {
-                print("[Autoplay] Executing queued command: \(command)")
-            }
-
-            // Position cursor back after the prompt and print command
-            print("\u{1B}[25;3H\(command)")
-            return command
+            manager.state.lastOutputLength = 0
         }
 
         // In manual mode, handle user interaction for regular commands
@@ -801,10 +1041,7 @@ class AutoplayTerminalDelegate: ZMachineTerminalDelegate {
 
         // Get next autoplay command (regular commands, not queued)
         if let command = manager.getNextCommand() {
-            // Clear output buffer before new command (start fresh for next output)
-            manager.state.outputBuffer = ""
-
-            // Apply timing delay before showing command (only when not waiting for user input)
+            // Apply timing delay before showing command (uses lastOutputLength)
             manager.applyTiming()
 
             // Position cursor back after the prompt and print command with newline
