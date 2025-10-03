@@ -34,7 +34,8 @@ struct ZILTool: ParsableCommand {
         subcommands: [
             BuildCommand.self,
             RunCommand.self,
-            AnalyzeCommand.self
+            AnalyzeCommand.self,
+            AutoplayCommand.self
         ]
     )
 }
@@ -812,6 +813,192 @@ struct AnalyzeCommand: ParsableCommand {
     }
 }
 
+/// Command for automated execution of Z-Machine story files using instruction scripts.
+///
+/// `AutoplayCommand` provides automated execution of story files through pre-written
+/// instruction scripts, enabling automated testing, walkthrough verification, and
+/// continuous integration workflows for interactive fiction development.
+///
+/// ## Features
+/// - Instruction file parsing with support for complex directives
+/// - Counter management and pattern matching for dynamic gameplay
+/// - Loop and conditional execution for complex automation scenarios
+/// - Automated healing sequences for combat-intensive games
+/// - Manual-advance mode for debugging and hybrid input
+/// - Auto-timing based on game output length or fixed intervals
+///
+/// ## Instruction File Format
+/// ```
+/// # Comments start with # and are ignored
+/// north                    # Plain commands sent directly to game
+/// get lamp
+/// turn on lamp
+///
+/// # Counter management
+/// !SET wounds = 0
+///
+/// # Pattern tracking
+/// !TRACK regex "hits you" wounds
+///
+/// # Loop structures
+/// !LOOP
+///   attack troll with sword
+/// !UNTIL regex "black smoke"
+///
+/// # Conditional execution
+/// !IFCOUNTER wounds > 0 THEN
+///   go to safe room
+///   !HEAL wounds
+/// !END
+///
+/// # Wait and healing automation
+/// !WAIT 35                 # Execute 35 "wait" commands rapidly
+/// !HEAL                    # Automated healing sequence
+/// ```
+///
+/// ## Example Usage
+/// ```bash
+/// # Basic autoplay execution
+/// zil autoplay game.z5 walkthrough.txt
+///
+/// # Manual debugging mode with verbose output
+/// zil autoplay game.z5 test.txt --manual --verbose
+///
+/// # Fixed timing interval
+/// zil autoplay game.z5 script.txt --interval 2
+/// ```
+struct AutoplayCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "autoplay",
+        abstract: "Execute story file with automated instruction script"
+    )
+
+    /// Story file to execute (.z3, .z4, .z5, .z6, .z8).
+    ///
+    /// The story file must be a valid Z-Machine bytecode file. The autoplay
+    /// system will load and execute the story while following the instruction
+    /// script for automated input.
+    @Argument(help: "Z-Machine story file to execute")
+    var storyFile: String
+
+    /// Instruction file containing autoplay directives.
+    ///
+    /// Plain text file with game commands and control directives. Supports
+    /// comments, counter management, pattern matching, loops, conditionals,
+    /// and automated sequences like healing.
+    @Argument(help: "Instruction file with autoplay directives")
+    var instructionFile: String
+
+    /// Fixed delay between commands in seconds.
+    ///
+    /// Overrides automatic timing with a fixed delay. When not specified,
+    /// timing is calculated automatically based on game output length:
+    /// - Short output (< 40 chars): 1 second
+    /// - Medium output (40-160 chars): 2 seconds
+    /// - Long output (> 160 chars): 4 seconds
+    @Option(help: "Fixed delay between commands (seconds)")
+    var interval: Int?
+
+    /// Enable manual-advance mode for debugging.
+    ///
+    /// In manual mode, the system waits for user input before executing
+    /// each autoplay command. If the user presses Enter, the next autoplay
+    /// command executes. If the user types a command, that command is sent
+    /// to the game instead of the autoplay command.
+    @Flag(help: "Enable manual-advance mode for interactive debugging")
+    var manual = false
+
+    /// Increase verbosity of autoplay execution.
+    ///
+    /// Multiple flags increase detail level:
+    /// - Default: Basic progress information
+    /// - -v: Show each command before execution
+    /// - -vv: Show counter updates and pattern matches
+    /// - -vvv: Show detailed execution trace
+    @Flag(name: .shortAndLong, help: "Increase verbosity (-v, -vv, -vvv)")
+    var verbose: Int
+
+    /// Executes the autoplay command with the specified options.
+    ///
+    /// This method loads the story file, parses the instruction file, and
+    /// orchestrates the automated execution with the configured timing and
+    /// interaction modes.
+    ///
+    /// - Throws: Various errors related to file access, instruction parsing,
+    ///           VM initialization, or execution failures
+    func run() throws {
+        print("ZIL Autoplay - Automated Story File Execution")
+        print("Story file: \(storyFile)")
+        print("Instructions: \(instructionFile)")
+        if let interval = interval {
+            print("Fixed interval: \(interval) seconds")
+        } else {
+            print("Auto-timing: Based on output length")
+        }
+        if manual {
+            print("Manual-advance mode: Enabled")
+        }
+        print("Verbosity level: \(verbose)")
+        print()
+
+        // Validate story file exists and is valid format
+        guard FileManager.default.fileExists(atPath: storyFile) else {
+            print("Error: Story file not found: \(storyFile)")
+            throw ExitCode.validationFailure
+        }
+
+        guard storyFile.hasSuffix(".z3") || storyFile.hasSuffix(".z4") ||
+              storyFile.hasSuffix(".z5") || storyFile.hasSuffix(".z6") ||
+              storyFile.hasSuffix(".z8") else {
+            print("Error: Story file must be a Z-Machine file (.z3, .z4, .z5, .z6, .z8)")
+            throw ExitCode.validationFailure
+        }
+
+        // Validate instruction file exists
+        guard FileManager.default.fileExists(atPath: instructionFile) else {
+            print("Error: Instruction file not found: \(instructionFile)")
+            throw ExitCode.validationFailure
+        }
+
+        // Create autoplay configuration
+        let config = AutoplayInstructionManager.AutoplayConfig(
+            interval: interval,
+            isManualMode: manual,
+            verbosity: verbose
+        )
+
+        // Initialize autoplay manager
+        let autoplayManager = AutoplayInstructionManager(config: config)
+
+        do {
+            // Load instruction file
+            print("Loading instruction file...")
+            try autoplayManager.loadInstructions(from: instructionFile)
+
+            // Initialize Z-Machine VM
+            print("Initializing Z-Machine VM...")
+            let vm = ZMachine()
+            let storyURL = URL(fileURLWithPath: storyFile)
+            try vm.loadStoryFile(from: storyURL)
+
+            print("✓ Story file loaded successfully")
+            print("  Version: \(vm.version.rawValue)")
+            print("Starting autoplay execution...")
+            print()
+
+            // Execute autoplay
+            try autoplayManager.execute(with: vm)
+
+        } catch let error as InstructionError {
+            print("Instruction file error: \(error.localizedDescription)")
+            throw ExitCode.validationFailure
+        } catch {
+            print("Error: \(error.localizedDescription)")
+            throw ExitCode.failure
+        }
+    }
+}
+
 // MARK: - CLI I/O Delegates
 
 /// Input delegate for command-line interface
@@ -825,7 +1012,7 @@ class CLIInputDelegate: TextInputDelegate {
         } else {
             // EOF detected (stdin closed) - exit gracefully
             print("\n[Input stream closed - terminating]")
-            exit(0)
+            _DarwinFoundation3.exit(0)
         }
     }
 

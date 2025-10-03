@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2025-10-02
+
+### Added
+- **Comprehensive Autoplay CLI Command** 🤖
+  - New `zil autoplay` command for automated Z-Machine story execution
+  - Complete instruction script system for testing, walkthroughs, and CI workflows
+  - Counter management with `!SET counter = value` directive
+  - Pattern tracking with `!TRACK regex "pattern" counter` for dynamic gameplay monitoring
+  - Loop structures with `!LOOP ... !UNTIL regex "pattern"` for complex automation scenarios
+  - Conditional execution using `!IFCOUNTER name op value THEN ... !END` blocks
+  - Automated healing sequences with `!HEAL [counter]` including lamp state management
+  - Wait sequences with `!WAIT turns` and `!WAIT-UNTIL regex "pattern"` for timing control
+  - Manual-advance mode for debugging and hybrid automated/manual gameplay
+  - Auto-timing based on game output length or configurable fixed intervals
+
+### Improved
+- **Enhanced Z-Machine Terminal Integration**
+  - AutoplayTerminalDelegate subclasses ZMachineTerminalDelegate for seamless integration
+  - Proper cursor positioning ensures autoplay commands appear exactly where users expect on prompt line
+  - Output accumulation across multiple terminal calls enables reliable pattern matching
+  - Queued command execution bypasses manual mode for automated sequences (HEAL, WAIT)
+  - Scope-aware pattern matching with Swift native Regex for optimal performance
+
+### Technical Details
+- Clean separation of instruction consumption vs semantic processing prevents double-increment bugs
+- Swift native Regex replaces NSRegularExpression for better performance and type safety
+- Output buffer accumulation ensures patterns spanning multiple `didOutputText()` calls are detected
+- Manual mode respects user control for regular commands while automating lengthy sequences
+- Comprehensive error handling with regex compilation validation and graceful fallbacks
+
+### Compiler Progress
+- Phase 1 ZIL language extensions completed (SYNTAX, SYNONYM, DEFMAC, BUZZ declarations)
+- Table literal support and variable arguments system implemented
+- FORM construction engine and compile-time evaluation framework operational
+- Enhanced string processing and text compression systems ready
+- Phases 2-3 pending: Object Property System and Parser Table Generation
+
+This release transforms the ZIL development environment into a comprehensive testing and automation platform, enabling continuous integration workflows and automated game verification while maintaining the robust compilation pipeline.
+
 ## [0.4.1] - 2025-10-01
 
 ### Added

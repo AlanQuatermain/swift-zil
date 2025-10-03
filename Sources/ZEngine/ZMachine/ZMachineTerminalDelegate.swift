@@ -10,7 +10,7 @@ import Foundation
 /// - Proper screen positioning and buffer management
 /// - ANSI escape sequence support for cursor control
 /// - Authentic Z-Machine v3 layout and behavior
-public class ZMachineTerminalDelegate: TextOutputDelegate, TextInputDelegate {
+open class ZMachineTerminalDelegate: TextOutputDelegate, TextInputDelegate {
 
     // MARK: - Configuration
 
@@ -73,7 +73,7 @@ public class ZMachineTerminalDelegate: TextOutputDelegate, TextInputDelegate {
 
     // MARK: - TextOutputDelegate Implementation
 
-    public func didOutputText(_ text: String) {
+    open func didOutputText(_ text: String) {
         for char in text {
             if char == "\n" {
                 // Handle newline - flush current buffer and do windowed scroll
@@ -110,7 +110,7 @@ public class ZMachineTerminalDelegate: TextOutputDelegate, TextInputDelegate {
         lineCount = 0
 
         // Read input (cursor should be at bottom of screen where text appears)
-        if let input = readLine() {
+        if let input = readLineWrapper() {
             // Scroll to next line to write output.
             newLine()
             return input.lowercased() // PEZ converts input to lowercase
@@ -120,6 +120,11 @@ public class ZMachineTerminalDelegate: TextOutputDelegate, TextInputDelegate {
             restoreTerminal()
             exit(0)
         }
+    }
+
+    /// Wrapper for readLine() that can be overridden by subclasses
+    open func readLineWrapper() -> String? {
+        return readLine()
     }
 
     public func requestInputWithTimeout(timeLimit: TimeInterval) -> (input: String?, timedOut: Bool) {
@@ -238,7 +243,7 @@ public class ZMachineTerminalDelegate: TextOutputDelegate, TextInputDelegate {
     // MARK: - Status Line Management (matching PEZ statusln)
 
     /// Update status line with current game state
-    private func updateStatusLine() {
+    public func updateStatusLine() {
         guard let vm = zmachine else {
             displayStatusLine("Swift ZIL - No Game Loaded")
             return
