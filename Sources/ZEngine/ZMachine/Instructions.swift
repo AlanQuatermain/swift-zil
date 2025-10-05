@@ -322,13 +322,13 @@ extension ZMachine {
             try storeResult(Int16(nextProp))
 
         case 0x14: // ADD
-            try storeResult(operand1 + operand2)
+            try storeResult(operand1 &+ operand2)
 
         case 0x15: // SUB
-            try storeResult(operand1 - operand2)
+            try storeResult(operand1 &- operand2)
 
         case 0x16: // MUL
-            try storeResult(operand1 * operand2)
+            try storeResult(operand1 &* operand2)
 
         case 0x17: // DIV
             guard operand2 != 0 else {

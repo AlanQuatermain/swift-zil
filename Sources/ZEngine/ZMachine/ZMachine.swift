@@ -1401,7 +1401,8 @@ public class ZMachine {
     /// Parse input string into words following Z-Machine rules
     ///
     /// Z-Machine word separation uses dictionary separators and whitespace as delimiters.
-    /// Multiple consecutive separators are treated as single separators.
+    /// Dictionary separators are added as separate single-character words.
+    /// Multiple consecutive whitespace characters are treated as a single delimiter.
     ///
     /// - Parameter input: Input string to parse
     /// - Returns: Array of word information
@@ -1413,9 +1414,16 @@ public class ZMachine {
         for (index, char) in input.enumerated() {
             let charByte = char.asciiValue ?? 32 // Default to space for non-ASCII
 
-            // Check if character is a separator (dictionary separators + whitespace)
-            if dictionary.isSeparator(charByte) || char.isWhitespace {
-                // Found separator - end current word if any
+            if dictionary.isSeparator(charByte) {
+                // Dictionary separator - end current word and add separator as its own word
+                if !currentWord.isEmpty {
+                    words.append(WordInfo(text: currentWord.lowercased(), length: currentWord.count, position: wordStart))
+                    currentWord = ""
+                }
+                // Add separator as a single-character word
+                words.append(WordInfo(text: String(char).lowercased(), length: 1, position: index))
+            } else if char.isWhitespace {
+                // Whitespace - end current word but don't add whitespace itself
                 if !currentWord.isEmpty {
                     words.append(WordInfo(text: currentWord.lowercased(), length: currentWord.count, position: wordStart))
                     currentWord = ""
