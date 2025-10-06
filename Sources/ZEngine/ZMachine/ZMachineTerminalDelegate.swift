@@ -124,7 +124,22 @@ open class ZMachineTerminalDelegate: TextOutputDelegate, TextInputDelegate {
 
     /// Wrapper for readLine() that can be overridden by subclasses
     open func readLineWrapper() -> String? {
-        return readLine()
+        guard let input = readLine() else { return nil }
+
+        // Check if debugger wants to handle this command
+        if let debugResult = zmachine?.debugger?.processCommand(input) {
+            // Debugger handled the command - display result and read next command
+            switch debugResult {
+            case .success(let output):
+                print(output)
+            case .error(let message):
+                print("Debug error: \(message)")
+            }
+            return readLineWrapper() // Read next command recursively
+        }
+
+        // Not a debug command - return to game
+        return input
     }
 
     public func requestInputWithTimeout(timeLimit: TimeInterval) -> (input: String?, timedOut: Bool) {

@@ -24,6 +24,10 @@ public class ObjectTree {
     /// Base address of static memory for address calculations
     private var staticMemoryBase: UInt32 = 0
 
+    /// Debug-mode lookup table: short name -> object number
+    /// Only populated when debug mode is enabled. Allows fast object search by name.
+    private var debugNameLookup: [String: UInt16]?
+
     public init() {}
 
     /// Load object tree from Z-Machine memory
@@ -498,6 +502,75 @@ public class ObjectTree {
 
             return (propertyNumber, propertySize, 1)
         }
+    }
+
+    // MARK: - Debug and Search Support
+
+    /// Enable debug mode - builds lookup table for fast name searches
+    ///
+    /// - Parameter zmachine: ZMachine instance for decoding object names
+    public func enableDebugMode(zmachine: ZMachine) {
+        var lookup: [String: UInt16] = [:]
+
+        // Build lookup table for all objects with short names
+        for objectNumber in objects.keys {
+            if let name = try? zmachine.readObjectShortDescription(objectNumber) {
+                if !name.isEmpty {
+                    lookup[name.lowercased()] = objectNumber
+                }
+            }
+        }
+
+        debugNameLookup = lookup
+    }
+
+    /// Disable debug mode - clears lookup table to free memory
+    public func disableDebugMode() {
+        debugNameLookup = nil
+    }
+
+    /// Search for objects by name (case-insensitive substring match)
+    ///
+    /// Requires debug mode to be enabled.
+    ///
+    /// - Parameter searchText: Text to search for in object names
+    /// - Returns: Array of (objectNumber, name) tuples matching the search, or nil if debug mode not enabled
+    public func searchObjects(containing searchText: String) -> [(UInt16, String)]? {
+        guard let lookup = debugNameLookup else {
+            return nil // Debug mode not enabled
+        }
+
+        let searchLower = searchText.lowercased()
+        var matches: [(UInt16, String)] = []
+
+        for (name, objectNumber) in lookup {
+            if name.contains(searchLower) {
+                matches.append((objectNumber, name))
+            }
+        }
+
+        return matches.sorted { $0.0 < $1.0 }
+    }
+
+    /// Get all object numbers that exist in the tree
+    ///
+    /// - Returns: Array of object numbers
+    public func getAllObjectNumbers() -> [UInt16] {
+        return Array(objects.keys).sorted()
+    }
+
+    /// Get total count of loaded objects
+    ///
+    /// - Returns: Number of objects in the tree
+    public func getObjectCount() -> Int {
+        return objects.count
+    }
+
+    /// Get maximum object number
+    ///
+    /// - Returns: Highest object number, or 0 if no objects
+    public func getMaxObjectNumber() -> UInt16 {
+        return objects.keys.max() ?? 0
     }
 }
 

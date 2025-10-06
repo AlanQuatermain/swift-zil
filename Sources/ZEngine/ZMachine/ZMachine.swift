@@ -96,6 +96,11 @@ public class ZMachine {
     internal var isRunning: Bool = false
     internal var hasQuit: Bool = false
 
+    // MARK: - Debugger
+
+    /// Optional debugger for interactive debugging
+    public internal(set) var debugger: ZMachineDebugger?
+
     // MARK: - Window Management
 
     /// Window manager for multiple window support (v4+)
@@ -1539,6 +1544,25 @@ public class ZMachine {
         hasQuit = true
         isRunning = false
         outputDelegate?.didQuit()
+    }
+
+    /// Enable debug mode (creates debugger if needed)
+    public func enableDebugMode() {
+        if debugger == nil {
+            debugger = ZMachineDebugger(zmachine: self)
+        }
+        debugger?.isEnabled = true
+
+        // Enable debug mode on object tree for fast name lookups
+        objectTree.enableDebugMode(zmachine: self)
+    }
+
+    /// Disable debug mode
+    public func disableDebugMode() {
+        debugger?.isEnabled = false
+
+        // Disable debug mode on object tree to free memory
+        objectTree.disableDebugMode()
     }
 
     /// Restart the game

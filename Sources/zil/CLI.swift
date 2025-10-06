@@ -378,6 +378,13 @@ struct RunCommand: ParsableCommand {
                 try vm.enableTracing(to: traceURL)
             }
 
+            // Enable debug mode if requested
+            if debug {
+                vm.enableDebugMode()
+                print("✓ Debug mode enabled")
+                print("  Type @help for debug commands")
+            }
+
             // Set up terminal interface for authentic Z-Machine v3 experience
             let terminalDelegate = ZMachineTerminalDelegate(zmachine: vm)
             vm.inputDelegate = terminalDelegate

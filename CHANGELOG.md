@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] - 2025-10-05
+
+### Added
+- **Interactive Z-Machine Debugger** 🔍
+  - Comprehensive debugger for inspecting and modifying game state during execution
+  - Activated with `--debug` flag when running story files
+  - 30+ commands for variable inspection, memory dumps, object manipulation, and execution control
+  - All debug commands use `@` prefix to distinguish from game input
+  - Type `@help` for complete command reference
+
+- **Variable & Memory Inspection**
+  - Read and modify global/local variables and evaluation stack
+  - Memory inspection with byte/word reads and hex dumps
+  - Support for hex (0x), decimal, and signed value formats
+
+- **Object System Debugging**
+  - Complete object inspection with attributes, properties, and relationships
+  - Object tree visualization and navigation
+  - Search objects by name with case-insensitive matching
+  - Move objects and modify attributes/properties in real-time
+
+- **Execution Analysis**
+  - Call stack inspection with frame details
+  - Breakpoint management (set/remove/list)
+  - Program counter tracking
+  - Command infrastructure for single-stepping (requires async integration)
+
+- **Game State Tools**
+  - Dictionary word lookup and inspection
+  - Table display for debugging timer/interrupt systems
+  - Z-Machine version and story file information
+
+### Improved
+- Object tree now supports debug mode with fast name-based object search
+- Terminal input processes debug commands before passing input to game
+- Clean separation between debug output and game text
+
+### Technical Details
+- Timer/interrupt systems discovered to be game library code (not VM instructions)
+- C-TABLE structure inspection enables debugging of game-specific interrupts
+- Debug mode builds object name lookup table for efficient searching
+
+This release provides comprehensive debugging capabilities for diagnosing game issues, understanding Z-Machine execution, and inspecting game state in real-time.
+
 ## [0.4.2] - 2025-10-02
 
 ### Added
