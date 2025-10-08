@@ -122,6 +122,10 @@ extension ZMachine {
             }
 
             globals[globalIndex] = UInt16(bitPattern: value)
+
+            // Write through to dynamic memory for save/restore consistency
+            let globalAddress = header.globalTableAddress + UInt32(globalIndex * 2)
+            try writeWord(UInt16(bitPattern: value), at: globalAddress)
         }
     }
 

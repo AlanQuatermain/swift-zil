@@ -24,11 +24,74 @@ public class ObjectTree {
     /// Base address of static memory for address calculations
     private var staticMemoryBase: UInt32 = 0
 
+    /// Object table address for write-back operations
+    private var objectTableAddress: UInt32 = 0
+
+    /// Callback to write bytes to dynamic memory
+    private var writeByteCallback: ((UInt32, UInt8) throws -> Void)?
+
     /// Debug-mode lookup table: short name -> object number
     /// Only populated when debug mode is enabled. Allows fast object search by name.
     private var debugNameLookup: [String: UInt16]?
 
     public init() {}
+
+    /// Set callback for writing to dynamic memory
+    public func setWriteCallback(_ callback: @escaping (UInt32, UInt8) throws -> Void) {
+        self.writeByteCallback = callback
+    }
+
+    /// Write object relationships back to dynamic memory
+    private func writeObjectToMemory(_ objectNumber: UInt16) throws {
+        guard let callback = writeByteCallback else { return }
+        guard let object = objects[objectNumber] else { return }
+
+        // Calculate object address in memory
+        // Objects start at objectTableAddress + 62 bytes (property defaults table)
+        let objectSize = version.rawValue >= 4 ? 14 : 9
+        let objectOffset = objectTableAddress + 62 + UInt32(objectNumber - 1) * UInt32(objectSize)
+
+        if version.rawValue >= 4 {
+            // V4+: parent/sibling/child are 2-byte words at offsets 6, 8, 10
+            try callback(objectOffset + 6, UInt8(object.parent >> 8))
+            try callback(objectOffset + 7, UInt8(object.parent & 0xFF))
+            try callback(objectOffset + 8, UInt8(object.sibling >> 8))
+            try callback(objectOffset + 9, UInt8(object.sibling & 0xFF))
+            try callback(objectOffset + 10, UInt8(object.child >> 8))
+            try callback(objectOffset + 11, UInt8(object.child & 0xFF))
+        } else {
+            // V3: parent/sibling/child are 1-byte values at offsets 4, 5, 6
+            try callback(objectOffset + 4, UInt8(object.parent & 0xFF))
+            try callback(objectOffset + 5, UInt8(object.sibling & 0xFF))
+            try callback(objectOffset + 6, UInt8(object.child & 0xFF))
+        }
+    }
+
+    /// Write object attributes back to dynamic memory
+    private func writeObjectAttributesToMemory(_ objectNumber: UInt16) throws {
+        guard let callback = writeByteCallback else { return }
+        guard let object = objects[objectNumber] else { return }
+
+        // Calculate object address in memory
+        let objectSize = version.rawValue >= 4 ? 14 : 9
+        let objectOffset = objectTableAddress + 62 + UInt32(objectNumber - 1) * UInt32(objectSize)
+
+        if version.rawValue >= 4 {
+            // V4+: 6 bytes of attributes (48 bits) at offsets 0-5
+            let attributeBytes = withUnsafeBytes(of: object.attributes.bigEndian) { Data($0) }
+            // Take last 6 bytes (skip first 2 bytes of the UInt64)
+            for i in 2..<8 {
+                try callback(objectOffset + UInt32(i - 2), attributeBytes[i])
+            }
+        } else {
+            // V3: 4 bytes of attributes (32 bits) at offsets 0-3
+            let attributeBytes = withUnsafeBytes(of: object.attributes.bigEndian) { Data($0) }
+            // Take last 4 bytes (skip first 4 bytes of the UInt64)
+            for i in 4..<8 {
+                try callback(objectOffset + UInt32(i - 4), attributeBytes[i])
+            }
+        }
+    }
 
     /// Load object tree from Z-Machine memory
     ///
@@ -43,6 +106,7 @@ public class ObjectTree {
         self.version = version
         self.memoryData = data
         self.staticMemoryBase = staticMemoryBase
+        self.objectTableAddress = objectTableAddress
         objects.removeAll()
         propertyDefaults.removeAll()
 
@@ -187,6 +251,9 @@ public class ObjectTree {
 
         object.setAttribute(attribute, value: value)
         objects[objectNumber] = object
+
+        // Write attributes back to dynamic memory for save/restore consistency
+        try writeObjectAttributesToMemory(objectNumber)
     }
 
     /// Get object property value
@@ -250,6 +317,7 @@ public class ObjectTree {
         // Set new parent
         object.parent = newParent
         objects[objectNumber] = object
+        try writeObjectToMemory(objectNumber)
 
         // Add to new parent's children if parent exists
         if newParent != 0 {
@@ -260,6 +328,8 @@ public class ObjectTree {
             parentObject.child = objectNumber
             objects[newParent] = parentObject
             objects[objectNumber] = object
+            try writeObjectToMemory(newParent)
+            try writeObjectToMemory(objectNumber)
         }
     }
 
@@ -295,6 +365,8 @@ public class ObjectTree {
                 if sibling.sibling == objectNumber {
                     sibling.sibling = object.sibling
                     objects[siblingNumber] = sibling
+                    // Write sibling update to dynamic memory
+                    try writeObjectToMemory(siblingNumber)
                     foundSibling = true
                     break
                 }
@@ -312,12 +384,16 @@ public class ObjectTree {
         }
 
         objects[object.parent] = parentObject
+        // Write parent update to dynamic memory
+        try writeObjectToMemory(object.parent)
 
         // Clear object's parent and sibling
         var updatedObject = object
         updatedObject.parent = 0
         updatedObject.sibling = 0
         objects[objectNumber] = updatedObject
+        // Write object update to dynamic memory
+        try writeObjectToMemory(objectNumber)
     }
 
     /// Get the address of a property's data (not the size byte)

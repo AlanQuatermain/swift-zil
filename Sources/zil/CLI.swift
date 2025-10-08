@@ -389,6 +389,7 @@ struct RunCommand: ParsableCommand {
             let terminalDelegate = ZMachineTerminalDelegate(zmachine: vm)
             vm.inputDelegate = terminalDelegate
             vm.outputDelegate = terminalDelegate
+            vm.saveGameDelegate = terminalDelegate
 
             if debug {
                 print("✓ Story file loaded successfully")

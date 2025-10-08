@@ -10,7 +10,8 @@ import Foundation
 /// - Proper screen positioning and buffer management
 /// - ANSI escape sequence support for cursor control
 /// - Authentic Z-Machine v3 layout and behavior
-open class ZMachineTerminalDelegate: TextOutputDelegate, TextInputDelegate {
+/// - Save/restore game functionality
+open class ZMachineTerminalDelegate: TextOutputDelegate, TextInputDelegate, SaveGameDelegate {
 
     // MARK: - Configuration
 
@@ -346,6 +347,47 @@ open class ZMachineTerminalDelegate: TextOutputDelegate, TextInputDelegate {
         positionCursor(row: 25, column: 1)
 
         fflush(stdout)
+    }
+
+    // MARK: - SaveGameDelegate Implementation
+
+    public func requestSaveFileURL(defaultName: String) -> URL? {
+        flushOutputBuffer()
+        print("\nSave filename [\(defaultName).sav]: ", terminator: "")
+        fflush(stdout)
+
+        guard let filename = readLine()?.trimmingCharacters(in: .whitespaces) else {
+            return nil
+        }
+
+        let finalName = filename.isEmpty ? "\(defaultName).sav" : filename
+        return URL(fileURLWithPath: finalName)
+    }
+
+    public func requestRestoreFileURL() -> URL? {
+        flushOutputBuffer()
+        print("\nRestore filename: ", terminator: "")
+        fflush(stdout)
+
+        guard let filename = readLine()?.trimmingCharacters(in: .whitespaces), !filename.isEmpty else {
+            return nil
+        }
+
+        return URL(fileURLWithPath: filename)
+    }
+
+    public func didSaveGame(to url: URL) {
+        print("\n[Game saved to \(url.lastPathComponent)]")
+    }
+
+    public func didRestoreGame(from url: URL) {
+        // Clear screen and redraw after restore
+        setupTerminal()
+        print("\n[Game restored from \(url.lastPathComponent)]")
+    }
+
+    public func saveRestoreDidFail(operation: String, error: Error) {
+        print("\n[Failed to \(operation) game: \(error.localizedDescription)]")
     }
 }
 

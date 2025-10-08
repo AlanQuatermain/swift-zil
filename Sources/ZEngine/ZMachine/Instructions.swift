@@ -34,22 +34,42 @@ extension ZMachine {
 
         case 0xB5: // SAVE (v1-3)
             if version.rawValue <= 3 {
-                // v1-3: SAVE pushes result onto stack (1=success, 0=failure)
-                let success = saveGame(defaultName: "save.qzl")
-                try pushStack(success ? 1 : 0)
+                // v1-3: SAVE is a branch instruction
+                // Calculate PC after consuming branch bytes (where execution resumes after restore)
+                var resumePC = programCounter
+                let branchByte = try readByte(at: resumePC)
+                resumePC += 1
+
+                // Check if 1-byte or 2-byte offset
+                // Bit 6 set (0x40) = 1-byte offset, bit 6 clear = 2-byte offset
+                if (branchByte & 0x40) == 0 {
+                    resumePC += 1  // Two-byte offset, skip second byte
+                }
+                // If bit 6 is set, it's already a 1-byte offset, no additional byte to skip
+
+                // Save with resumePC pointing to next instruction
+                let success = saveGame(defaultName: "save.qzl", storeVariable: nil, resumePC: UInt32(resumePC))
+
+                // Branch on success (branchOnCondition reads branch bytes and updates programCounter)
+                try branchOnCondition(success)
             } else {
                 throw RuntimeError.unsupportedOperation("SAVE instruction in version \(version.rawValue)", location: SourceLocation.unknown)
             }
 
         case 0xB6: // RESTORE (v1-3)
             if version.rawValue <= 3 {
-                // v1-3: RESTORE pushes result onto stack (2=success, 0=failure)
-                // Note: Success should not return since execution resumes from save point
+                // v1-3: RESTORE is a branch instruction
+                // Attempt to restore
                 let success = restoreGame()
+
+                // If restore failed, branch on false (fail through)
+                // If restore succeeded, execution resumes at save point (doesn't return here)
                 if !success {
-                    // Only push failure result; success doesn't return
-                    try pushStack(0)
+                    try branchOnCondition(false)
                 }
+                // On success: restoreGame() has already:
+                // - Restored PC to point to instruction after original SAVE's branch
+                // - Execution continues from restored PC
             } else {
                 throw RuntimeError.unsupportedOperation("RESTORE instruction in version \(version.rawValue)", location: SourceLocation.unknown)
             }
@@ -922,23 +942,46 @@ extension ZMachine {
         switch opcode {
         case 0x00: // SAVE (V4+)
             if version.rawValue >= 4 {
-                // v4+: SAVE stores result (1=success, 0=failure)
-                // Optional table argument for aux memory save (not implemented)
-                let success = saveGame(defaultName: "save.qzl")
-                try storeResult(success ? 1 : 0)
+                // v4+: SAVE stores result (1=success, 0=failure, 2=restored)
+                // Read the store variable byte
+                let storeVar = try readByte(at: programCounter)
+                programCounter += 1
+
+                // Trace the store byte
+                traceStoreByte(storeVar)
+
+                // Save with resumePC pointing to next instruction (after store byte)
+                let success = saveGame(defaultName: "save.qzl", storeVariable: storeVar, resumePC: UInt32(programCounter))
+
+                // Store result: 1 for success, 0 for failure
+                try writeVariable(storeVar, value: success ? 1 : 0)
             } else {
                 throw RuntimeError.unsupportedOperation("Extended SAVE in version \(version.rawValue)", location: SourceLocation.unknown)
             }
 
         case 0x01: // RESTORE (V4+)
             if version.rawValue >= 4 {
-                // v4+: RESTORE stores result (2=success, 0=failure)
-                // Note: Success should not return since execution resumes from save point
+                // v4+: RESTORE stores result (0=failure, 2=success)
+                // On success, execution resumes at save point with 2 stored in original SAVE's variable
+
+                // Read the store variable byte (needed for failure case)
+                let storeVar = try readByte(at: programCounter)
+                programCounter += 1
+
+                // Trace the store byte
+                traceStoreByte(storeVar)
+
+                // Attempt to restore
                 let success = restoreGame()
+
                 if !success {
-                    // Only store failure result; success doesn't return
-                    try storeResult(0)
+                    // Restore failed - store 0 in this RESTORE's store variable
+                    try writeVariable(storeVar, value: 0)
                 }
+                // On success: restoreGame() has already:
+                // - Restored PC to point after original SAVE instruction
+                // - Stored 2 in the variable that original SAVE used
+                // Execution continues from restored PC (doesn't return here)
             } else {
                 throw RuntimeError.unsupportedOperation("Extended RESTORE in version \(version.rawValue)", location: SourceLocation.unknown)
             }

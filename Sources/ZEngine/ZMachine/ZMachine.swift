@@ -677,6 +677,12 @@ public class ZMachine {
 
         try objectTree.load(from: objectData, version: version, objectTableAddress: objectTableOffset, staticMemoryBase: header.staticMemoryBase, dictionaryAddress: header.dictionaryAddress)
 
+        // Set up write-back callback for object tree changes
+        objectTree.setWriteCallback { [weak self] address, byte in
+            guard let self = self else { return }
+            try self.writeByte(byte, at: address)
+        }
+
         // Load dictionary from static memory
         // Convert absolute dictionary address to offset within static memory
         let dictionaryOffset = header.dictionaryAddress - header.staticMemoryBase
@@ -1758,8 +1764,10 @@ public class ZMachine {
     ///
     /// - Parameters:
     ///   - defaultName: Suggested filename for save file
+    ///   - storeVariable: The variable number where SAVE instruction stores its result (required for V4+, optional for V3)
+    ///   - resumePC: The PC value to save in IFhd (points to branch bytes for V3, store byte for V4+)
     /// - Returns: True if save succeeded, false if cancelled or failed
-    public func saveGame(defaultName: String = "save") -> Bool {
+    public func saveGame(defaultName: String = "save", storeVariable: UInt8? = nil, resumePC: UInt32? = nil) -> Bool {
         guard let delegate = saveGameDelegate else {
             outputDelegate?.didOutputText("[No save delegate configured]")
             return false
@@ -1772,7 +1780,13 @@ public class ZMachine {
 
         do {
             // Capture current game state
-            let saveState = try captureGameState()
+            // For V3, storeVariable is nil (branch instruction)
+            // For V4+, storeVariable is provided (store instruction)
+            // resumePC should point to the instruction bytes after SAVE opcode
+            let saveState = try captureGameState(
+                storeVariable: storeVariable ?? 0xFF,
+                resumePC: resumePC ?? UInt32(programCounter)
+            )
 
             // Write Quetzal save file
             let quetzalData = try QuetzalWriter.writeQuetzalFile(saveState)
@@ -1798,6 +1812,7 @@ public class ZMachine {
     /// - Decompresses and restores dynamic memory changes
     /// - Restores complete stack state and execution context
     /// - Resumes execution from the saved program counter
+    /// - Stores 2 in the variable that SAVE used (to indicate restore success)
     ///
     /// - Returns: True if restore succeeded, false if cancelled or failed
     public func restoreGame() -> Bool {
@@ -1814,13 +1829,19 @@ public class ZMachine {
         do {
             // Read Quetzal save file
             let saveData = try Data(contentsOf: restoreURL)
-            let saveState = try QuetzalReader.readQuetzalFile(saveData)
+            let saveState = try QuetzalReader.readQuetzalFile(saveData, version: UInt8(version.rawValue))
 
             // Validate save compatibility
             try validateSaveCompatibility(saveState.identification)
 
             // Restore VM state
             try restoreGameState(saveState)
+
+            // For V4+: Store 2 in the variable that SAVE used (indicating successful restore)
+            // For V3: No store variable - success is indicated by execution continuing
+            if version.rawValue >= 4 {
+                try writeVariable(saveState.saveInstructionStoreVariable, value: 2)
+            }
 
             // Notify delegate of successful restore
             delegate.didRestoreGame(from: restoreURL)
@@ -1844,8 +1865,8 @@ public class ZMachine {
             throw RuntimeError.unsupportedOperation("SAVE_UNDO not supported in version \(version.rawValue)", location: SourceLocation.unknown)
         }
 
-        // Capture current state for UNDO
-        undoState = try captureGameState()
+        // Capture current state for UNDO (use 0 for storeVariable and current PC for resumePC)
+        undoState = try captureGameState(storeVariable: 0, resumePC: UInt32(programCounter))
     }
 
     /// Restore UNDO state from memory (v5+)
@@ -1877,15 +1898,19 @@ public class ZMachine {
     /// - Complete stack state with proper frame encoding
     /// - Current execution context
     ///
+    /// - Parameter storeVariable: The variable number where SAVE instruction stores its result
+    /// - Parameter resumePC: The current PC to save in topmost Stks frame (where execution resumes)
     /// - Returns: Complete save state ready for serialization
     /// - Throws: RuntimeError for state capture failures
-    private func captureGameState() throws -> QuetzalSaveState {
+    private func captureGameState(storeVariable: UInt8, resumePC: UInt32) throws -> QuetzalSaveState {
         // Create story identification for save validation
+        // Per Quetzal: IFhd contains story header fields for identification only
+        // IFhd PC field should mirror the initial PC from story file header
         let identification = StoryIdentification(
-            release: UInt16(storyData.subdata(in: 2..<4).withUnsafeBytes { $0.load(as: UInt16.self).bigEndian }), // Release from header bytes 2-3
+            release: UInt16(storyData.subdata(in: 2..<4).withUnsafeBytes { $0.load(as: UInt16.self).bigEndian }),
             serial: header.serialNumber,
             checksum: header.checksum,
-            initialPC: header.initialPC
+            initialPC: header.initialPC  // Story file's initial PC (for validation, not execution)
         )
 
         // Get original dynamic memory from story file for delta compression
@@ -1924,7 +1949,9 @@ public class ZMachine {
             identification: identification,
             compressedMemory: compressedMemory,
             stackState: stackState,
-            programCounter: programCounter,
+            programCounter: resumePC,  // Use resumePC parameter, not self.programCounter
+            saveInstructionStoreVariable: storeVariable,
+            version: UInt8(version.rawValue),  // Pass version for Stks dummy frame logic
             interpreterData: nil, // Could store Swift-ZIL specific data
             timestamp: Date()
         )
@@ -1934,6 +1961,8 @@ public class ZMachine {
     ///
     /// Ensures the save file was created for the same story to prevent
     /// loading incompatible save data that could corrupt game state.
+    /// Per Quetzal spec 5.4: validation uses release, serial, and checksum.
+    /// The PC field is for resuming execution, not validation.
     ///
     /// - Parameter identification: Story identification from save file
     /// - Throws: QuetzalError for incompatible saves
@@ -1948,10 +1977,8 @@ public class ZMachine {
             throw QuetzalError.incompatibleSave("Save file checksum \(identification.checksum) doesn't match story \(header.checksum)")
         }
 
-        // Verify initial PC matches (ensures same version/compilation)
-        guard identification.initialPC == header.initialPC else {
-            throw QuetzalError.incompatibleSave("Save file initial PC \(identification.initialPC) doesn't match story \(header.initialPC)")
-        }
+        // Note: PC in IFhd is the resume address (branch/store bytes), not for validation
+        // Serial number + checksum are sufficient to validate save compatibility
     }
 
     /// Restore complete game state from save data
@@ -2003,14 +2030,13 @@ public class ZMachine {
         // Reload global variables from restored dynamic memory
         try loadGlobals()
 
-        // Reload object tree state (objects may have moved/changed)
-        // Object tree needs access to entire story file since objects are in dynamic memory
-        // but property tables are in static memory
-        let objectTableAddress = header.objectTableAddress
-        let objectData = storyData
-        let objectTableOffset = objectTableAddress
+        // Reload object tree with restored dynamic memory
+        // Create combined memory view: restored dynamic + original static/high
+        var combinedMemory = Data()
+        combinedMemory.append(dynamicMemory)
+        combinedMemory.append(storyData.subdata(in: Int(staticMemoryBase)..<storyData.count))
 
-        try objectTree.load(from: objectData, version: version, objectTableAddress: objectTableOffset, staticMemoryBase: header.staticMemoryBase, dictionaryAddress: header.dictionaryAddress)
+        try objectTree.load(from: combinedMemory, version: version, objectTableAddress: header.objectTableAddress, staticMemoryBase: header.staticMemoryBase, dictionaryAddress: header.dictionaryAddress)
     }
 
     // MARK: - Random Number Generation
