@@ -167,8 +167,8 @@ public class InstructionEncoder {
             zmachineOpcode = 0x0B    // Set attribute
         case "CLEAR_ATTR", "FCLEAR":
             zmachineOpcode = 0x0C // Clear attribute
-        case "STORE":
-            zmachineOpcode = 0x0D             // Store variable
+        case "SET":
+            zmachineOpcode = 0x0D             // Set/Store variable (ZAP mnemonic: SET)
         case "INSERT_OBJ":
             zmachineOpcode = 0x0E        // Insert object into object
         case "LOADW":

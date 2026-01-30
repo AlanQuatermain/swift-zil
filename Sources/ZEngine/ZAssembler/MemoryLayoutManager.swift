@@ -5,6 +5,7 @@ import Foundation
 public class MemoryLayoutManager {
 
     public let version: ZMachineVersion
+    public let compilationContext: CompilationContext
     private var dynamicMemory: [UInt8] = []
     private var staticMemory: [UInt8] = []
     private var highMemory: [UInt8] = []
@@ -40,6 +41,7 @@ public class MemoryLayoutManager {
         var child: UInt16 = 0
         var attributes: UInt64 = 0  // Changed to UInt64 to handle 48 bits for v4+
         var propertyTableAddress: UInt16 = 0
+        var isRoom: Bool = false  // Track if object is a room for ordering
     }
 
     private struct PropertyEntry {
@@ -48,8 +50,9 @@ public class MemoryLayoutManager {
         let defaultValue: ZValue
     }
 
-    public init(version: ZMachineVersion) {
+    public init(version: ZMachineVersion, compilationContext: CompilationContext = CompilationContext()) {
         self.version = version
+        self.compilationContext = compilationContext
         setupMemoryLayout()
     }
 
@@ -210,8 +213,36 @@ public class MemoryLayoutManager {
             resolvedValue = value
         }
 
+        // Check if this property indicates the object is a room
+        if isDirectionProperty(propertyName) {
+            objectTable[objectIndex].isRoom = true
+        }
+
         // Add property to object
         objectTable[objectIndex].properties[propertyName] = resolvedValue
+    }
+
+    /// Check if a property name represents a direction (indicating the object is a room)
+    ///
+    /// Standard ZIL direction properties include:
+    /// - Cardinal directions: NORTH, SOUTH, EAST, WEST
+    /// - Ordinal directions: NE, NW, SE, SW
+    /// - Vertical: UP, DOWN
+    /// - Access: IN, OUT
+    /// - Special: LAND (for boat navigation)
+    ///
+    /// - Parameter propertyName: The property name to check
+    /// - Returns: true if the property is a direction property
+    private func isDirectionProperty(_ propertyName: String) -> Bool {
+        let upperName = propertyName.uppercased()
+        let directions: Set<String> = [
+            "NORTH", "SOUTH", "EAST", "WEST",
+            "NE", "NW", "SE", "SW",
+            "UP", "DOWN",
+            "IN", "OUT",
+            "LAND"
+        ]
+        return directions.contains(upperName)
     }
 
     // MARK: - Dictionary Management
@@ -424,9 +455,25 @@ public class MemoryLayoutManager {
         header[5] = UInt8(highMemBase & 0xFF)
 
         // Bytes 6-7: Initial PC (start routine address - high byte first)
-        let packedStartAddress = packRoutineAddress(startRoutineAddress == 0 ? highMemoryBase : startRoutineAddress)
-        header[6] = UInt8((packedStartAddress >> 8) & 0xFF)
-        header[7] = UInt8(packedStartAddress & 0xFF)
+        // For v3 and v4, this is a direct byte address
+        // For v5+, this is a packed address (divide by 4 for v5/v8, by 8 for v6/v7)
+        // startRoutineAddress is a relative offset from the start of high memory
+        // We need to add highMemoryBase to get the absolute address in the story file
+        let startAddr = startRoutineAddress == 0 ? highMemoryBase : (highMemoryBase + startRoutineAddress)
+        let initialPC: UInt16
+        switch version {
+        case .v3, .v4:
+            // Direct byte address for v3/v4
+            initialPC = UInt16(min(0xFFFF, startAddr))
+        case .v5, .v8:
+            // Packed address (divide by 4)
+            initialPC = UInt16(min(0xFFFF, startAddr / 4))
+        case .v6, .v7:
+            // Packed address (divide by 8)
+            initialPC = UInt16(min(0xFFFF, startAddr / 8))
+        }
+        header[6] = UInt8((initialPC >> 8) & 0xFF)
+        header[7] = UInt8(initialPC & 0xFF)
 
         // Bytes 8-9: Dictionary address (high byte first)
         let dictAddress = calculateDictionaryAddress()
@@ -454,12 +501,47 @@ public class MemoryLayoutManager {
 
         // Bytes 16-17: Flags 2 (story file requirements)
         var flags2: UInt16 = 0
-        // Set status line type based on version
+
+        // Set status line type based on version and compilation context
         if version.rawValue >= 4 {
-            flags2 |= 0x0002 // Score/turns status line
+            // For v4+, bit 1 = status line type (0 = score/turns, 1 = time)
+            if compilationContext.hasTimeStatusLine() {
+                flags2 |= 0x0002 // Time status line
+            }
+            // Score/turns is default (bit not set)
         } else {
-            flags2 |= 0x0040 // Location/object status line
+            // For v3, use flag 1 bit 1 instead (set in byte 1)
+            // Leave flags2 at 0 for v3
         }
+
+        // Apply ZIP options for v5+ capabilities in Flags 2
+        if version.rawValue >= 5 {
+            // Bit 3: Colours available (set if COLOR requested)
+            if compilationContext.hasZipOption(.color) {
+                flags2 |= 0x0008
+            }
+
+            // Bit 5: Picture displaying available (set if DISPLAY requested)
+            if compilationContext.hasZipOption(.display) {
+                flags2 |= 0x0020
+            }
+
+            // Bit 7: Sound effects available (set if SOUND requested)
+            if compilationContext.hasZipOption(.sound) {
+                flags2 |= 0x0080
+            }
+        }
+
+        // Apply UNDO capability for v5+ in Flags 2 bit 4
+        if version.rawValue >= 5 && compilationContext.hasZipOption(.undo) {
+            flags2 |= 0x0010  // Undo available
+        }
+
+        // Apply MOUSE capability for v5+ in Flags 2 bit 5
+        if version.rawValue >= 5 && compilationContext.hasZipOption(.mouse) {
+            flags2 |= 0x0020  // Mouse available (already set if DISPLAY is set)
+        }
+
         header[16] = UInt8((flags2 >> 8) & 0xFF)
         header[17] = UInt8(flags2 & 0xFF)
 
@@ -697,8 +779,11 @@ public class MemoryLayoutManager {
             tableData.append(UInt8(defaultValue & 0xFF))
         }
 
+        // Apply object ordering based on compilation context
+        let orderedObjects = applyObjectOrdering(objectTable)
+
         // Object entries follow the property defaults
-        for object in objectTable {
+        for object in orderedObjects {
             if version.rawValue >= 4 {
                 // Version 4+ object format (14 bytes total)
                 // Attributes: 6 bytes (48 bits)
@@ -1125,6 +1210,318 @@ public class MemoryLayoutManager {
             return Data([0x00, 0x01])
         default:
             return Data([0x00])
+        }
+    }
+
+    // MARK: - Compiled Object Support (Compiler Integration)
+
+    /// Pending object data for two-pass resolution
+    private struct PendingObjectData {
+        let compiledObject: CompiledObject
+        let objectIndex: Int
+        let propertyTableOffset: UInt32
+    }
+
+    /// Queue of objects awaiting symbolic reference resolution
+    private var pendingObjects: [PendingObjectData] = []
+
+    /// Add object from compiler pipeline with pre-encoded data
+    /// - Parameters:
+    ///   - compiledObj: Compiled object from ObjectTreeBuilder
+    ///   - resolver: Symbol resolver for resolving references
+    /// - Returns: Object ID for cross-referencing
+    /// - Throws: AssemblyError for invalid object data
+    /// - Note: Objects are added in pass 1; resolution happens in pass 2
+    public func addCompiledObject(_ compiledObj: CompiledObject, resolver: SymbolResolver) throws -> Int {
+        let objectId = UInt16(objectTable.count + 1)
+
+        // Estimate property table size for space reservation
+        let estimatedSize = estimatePropertyTableSize(compiledObj)
+        let propertyTableOffset = currentAddress
+        currentAddress += estimatedSize
+
+        // Convert CompiledObject attributes to UInt64
+        let attributes = attributesToUInt64(compiledObj.attributes)
+
+        // Detect if this object is a room by checking for direction properties
+        let isRoom = compiledObj.properties.contains { property in
+            isDirectionProperty(property.name)
+        }
+
+        // Create object entry with pre-encoded short name
+        let entry = ObjectEntry(
+            name: compiledObj.name,
+            id: objectId,
+            properties: [:],  // Will be populated in resolution pass
+            parent: UInt16(compiledObj.parentID),
+            sibling: UInt16(compiledObj.siblingID),
+            child: UInt16(compiledObj.childID),
+            attributes: attributes,
+            propertyTableAddress: UInt16(propertyTableOffset),
+            isRoom: isRoom  // Set room status based on direction properties
+        )
+
+        objectTable.append(entry)
+
+        // Store for second-pass resolution
+        pendingObjects.append(PendingObjectData(
+            compiledObject: compiledObj,
+            objectIndex: objectTable.count - 1,
+            propertyTableOffset: propertyTableOffset
+        ))
+
+        return Int(objectId)
+    }
+
+    /// Resolve all pending symbolic references (second pass)
+    /// - Parameter resolver: Symbol resolver for address lookup
+    /// - Throws: AssemblyError for unresolved symbols
+    public func resolveAllSymbolicReferences(resolver: SymbolResolver) throws {
+        for pending in pendingObjects {
+            try resolveObjectProperties(pending, resolver: resolver)
+        }
+        pendingObjects.removeAll()
+    }
+
+    /// Resolve symbolic references in object properties
+    private func resolveObjectProperties(_ pending: PendingObjectData, resolver: SymbolResolver) throws {
+        var resolvedProperties: [CompiledProperty] = []
+
+        for property in pending.compiledObject.properties {
+            let resolvedEncoding: PropertyValueEncoding
+
+            switch property.encoding {
+            case .bytes(let data):
+                // Already resolved - use as-is
+                resolvedEncoding = .bytes(data)
+
+            case .routineReference(let name):
+                guard let address = resolver.resolveRoutine(name) else {
+                    throw AssemblyError.memoryLayoutError(
+                        "Unresolved routine reference: '\(name)' in object '\(pending.compiledObject.name)'",
+                        location: pending.compiledObject.location
+                    )
+                }
+                resolvedEncoding = .bytes(address.toBytes())
+
+            case .stringReference(let content):
+                guard let address = resolver.resolveString(content) else {
+                    throw AssemblyError.memoryLayoutError(
+                        "Unresolved string reference in object '\(pending.compiledObject.name)'",
+                        location: pending.compiledObject.location
+                    )
+                }
+                resolvedEncoding = .bytes(address.toBytes())
+
+            case .tableReference(let name):
+                guard let address = resolver.resolveTable(name) else {
+                    throw AssemblyError.memoryLayoutError(
+                        "Unresolved table reference: '\(name)' in object '\(pending.compiledObject.name)'",
+                        location: pending.compiledObject.location
+                    )
+                }
+                resolvedEncoding = .bytes(address.toBytes())
+            }
+
+            resolvedProperties.append(CompiledProperty(
+                number: property.number,
+                name: property.name,
+                encoding: resolvedEncoding
+            ))
+        }
+
+        // Generate property table bytes with resolved references
+        let propertyTableBytes = try encodePropertyTable(
+            properties: resolvedProperties,
+            shortName: pending.compiledObject.shortName
+        )
+
+        // Update object's property table address
+        // (The offset was already reserved in addCompiledObject)
+        objectTable[pending.objectIndex].propertyTableAddress = UInt16(pending.propertyTableOffset)
+
+        // Store property table data (implementation depends on memory layout strategy)
+        // For now, we'll need to integrate with the existing property table generation
+        ZILLogger.vm.debug("Resolved properties for object \(pending.compiledObject.name): \(propertyTableBytes.count) bytes")
+    }
+
+    /// Encode property table from resolved compiled properties
+    /// - Parameters:
+    ///   - properties: Resolved properties (all symbolic references converted to bytes)
+    ///   - shortName: Pre-encoded short name with length prefix
+    /// - Returns: Complete property table as byte array
+    /// - Throws: AssemblyError for encoding errors
+    private func encodePropertyTable(
+        properties: [CompiledProperty],
+        shortName: [UInt8]
+    ) throws -> [UInt8] {
+        var bytes: [UInt8] = []
+
+        // Write short name (already encoded with length prefix from compiler)
+        bytes.append(contentsOf: shortName)
+
+        // Write properties (should already be in descending order from compiler)
+        for property in properties {
+            guard case .bytes(let data) = property.encoding else {
+                throw AssemblyError.memoryLayoutError(
+                    "Internal error: unresolved property encoding for '\(property.name)'",
+                    location: .unknown
+                )
+            }
+
+            // Encode property header based on Z-Machine version
+            let propertyNumber = property.number
+            let propertySize = data.count
+
+            if version.rawValue >= 4 {
+                // Version 4+ property format
+                if propertySize <= 2 {
+                    // Short format: 0S PPPPPP
+                    // Bit 7 = 0 (short form)
+                    // Bit 6 (S) = size bit: 0 = 1 byte, 1 = 2 bytes
+                    // Bits 0-5 = property number
+                    let sizeBit: UInt8 = (propertySize == 2) ? 0x40 : 0x00
+                    let header = sizeBit | UInt8(propertyNumber & 0x3F)
+                    bytes.append(header)
+                } else {
+                    // Long format: 10 PPPPPP + size byte
+                    // Byte 1: Bit 7 = 1, Bit 6 = 0, Bits 0-5 = property number
+                    // Byte 2: Actual size in bytes
+                    let header = 0x80 | UInt8(propertyNumber & 0x3F)
+                    bytes.append(header)
+                    bytes.append(UInt8(propertySize & 0xFF))
+                }
+            } else {
+                // Version 3 property format: SSSP PPPP
+                // SSS = size-1 (3 bits, values 0-7 for 1-8 bytes)
+                // PPPPP = property number (5 bits, values 1-31)
+                guard propertySize >= 1 && propertySize <= 8 else {
+                    throw AssemblyError.memoryLayoutError(
+                        "Property size \(propertySize) out of range (1-8) for v3",
+                        location: .unknown
+                    )
+                }
+                let sizeField = UInt8(propertySize - 1) & 0x07  // Defensive: ensure only 3 bits
+                let header = (sizeField << 5) | UInt8(propertyNumber & 0x1F)
+                bytes.append(header)
+            }
+
+            // Write property data
+            bytes.append(contentsOf: data)
+        }
+
+        // Terminator (property number 0)
+        bytes.append(0x00)
+
+        return bytes
+    }
+
+    /// Estimate property table size for space reservation
+    /// - Parameter obj: Compiled object
+    /// - Returns: Estimated size in bytes
+    private func estimatePropertyTableSize(_ obj: CompiledObject) -> UInt32 {
+        var size = UInt32(obj.shortName.count)  // Pre-encoded short name
+
+        for property in obj.properties {
+            size += 1  // Header byte (minimum)
+
+            switch property.encoding {
+            case .bytes(let data):
+                size += UInt32(data.count)
+            case .routineReference, .stringReference, .tableReference:
+                size += 2  // Packed address is always 2 bytes
+            }
+
+            // Add extra byte for long format if needed (v4+ with size > 2)
+            if version.rawValue >= 4 {
+                let dataSize: Int
+                switch property.encoding {
+                case .bytes(let data):
+                    dataSize = data.count
+                default:
+                    dataSize = 2
+                }
+                if dataSize > 2 {
+                    size += 1  // Extra header byte for long format
+                }
+            }
+        }
+
+        size += 1  // Terminator
+
+        // Add some padding for safety
+        size += 4
+
+        return size
+    }
+
+    /// Convert attribute byte array to UInt64 for ObjectEntry
+    /// - Parameter attributes: Attribute bytes from CompiledObject (MSB first)
+    /// - Returns: UInt64 with attributes packed
+    private func attributesToUInt64(_ attributes: [UInt8]) -> UInt64 {
+        var result: UInt64 = 0
+
+        for (index, byte) in attributes.enumerated() {
+            if index < 8 {  // Only use first 8 bytes (64 bits)
+                result |= UInt64(byte) << (56 - (index * 8))
+            }
+        }
+
+        return result
+    }
+
+    // MARK: - Object Ordering
+
+    /// Apply object ordering strategy based on compilation context
+    private func applyObjectOrdering(_ objects: [ObjectEntry]) -> [ObjectEntry] {
+        let ordering = compilationContext.getObjectOrdering()
+
+        switch ordering {
+        case .defined:
+            // Keep objects in definition order
+            return objects
+
+        case .roomsFirst:
+            // Sort with rooms first, then other objects
+            return objects.sorted { obj1, obj2 in
+                // Rooms before non-rooms
+                if obj1.isRoom && !obj2.isRoom {
+                    return true
+                } else if !obj1.isRoom && obj2.isRoom {
+                    return false
+                } else {
+                    // Within same category, keep original order
+                    return obj1.id < obj2.id
+                }
+            }
+
+        case .roomsAndLgsFirst:
+            // Sort with rooms and local globals first, then other objects
+            // Note: Local globals detection would require additional metadata
+            // For now, treat similarly to roomsFirst
+            return objects.sorted { obj1, obj2 in
+                if obj1.isRoom && !obj2.isRoom {
+                    return true
+                } else if !obj1.isRoom && obj2.isRoom {
+                    return false
+                } else {
+                    return obj1.id < obj2.id
+                }
+            }
+
+        case .roomsLast:
+            // Sort with non-rooms first, then rooms
+            return objects.sorted { obj1, obj2 in
+                // Non-rooms before rooms
+                if !obj1.isRoom && obj2.isRoom {
+                    return true
+                } else if obj1.isRoom && !obj2.isRoom {
+                    return false
+                } else {
+                    // Within same category, keep original order
+                    return obj1.id < obj2.id
+                }
+            }
         }
     }
 }

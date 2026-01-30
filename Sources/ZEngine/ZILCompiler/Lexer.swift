@@ -151,6 +151,10 @@ public class ZILLexer {
         case "!":
             return tokenizeIndirection()
 
+        case "'":
+            advance()
+            return ZILToken(.quote, value: "'", location: tokenStart)
+
         default:
             if char.isNumber || (char == "-" && peekNext()?.isNumber == true) {
                 return try tokenizeNumber()

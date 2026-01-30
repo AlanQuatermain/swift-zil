@@ -231,7 +231,7 @@ struct ZAPCodeGeneratorTests {
         let result = try generator.generateCode(from: [.routine(routine)])
 
         #expect(result.contains("SET\tX,42"))
-        #expect(result.contains("SETG\t'SCORE,100"))
+        #expect(result.contains("SET\t'SCORE,100"))
     }
 
     // MARK: - COND Statement Tests
@@ -346,10 +346,17 @@ struct ZAPCodeGeneratorTests {
 
         let result = try generator.generateCode(from: [.object(object)])
 
+        // Authentic Infocom format: single-line .OBJECT directive
         #expect(result.contains(".OBJECT TEST-OBJECT"))
-        #expect(result.contains("DESC\tSTR0"))
-        #expect(result.contains("FLAGS\tTAKEBIT"))
-        #expect(result.contains(".ENDOBJECT"))
+        #expect(result.contains("FX?TAKEBIT"))  // Flag in object directive
+        #expect(result.contains("T?TEST-OBJECT"))  // Property table reference
+
+        // Property table format
+        #expect(result.contains("T?TEST-OBJECT::"))
+        #expect(result.contains(".TABLE"))
+        #expect(result.contains(".ENDT"))
+
+        // String in string table
         #expect(result.contains(".STRING STR0 \"A test object\""))
     }
 
@@ -1521,5 +1528,175 @@ struct ZAPCodeGeneratorTests {
         let debugLines = debugResult.components(separatedBy: .newlines).count
         let prodLines = prodResult.components(separatedBy: .newlines).count
         #expect(prodLines < debugLines)
+    }
+
+    // MARK: - SYNTAX Integration Tests
+
+    @Test("SYNTAX declaration to V-WORDS table generation")
+    func syntaxDeclarationToVWordsTableGeneration() throws {
+        let symbolTable = createTestSymbolTable()
+
+        // Add required symbols for SYNTAX test
+        symbolTable.defineSymbol(name: "V-TAKE", type: .routine(parameters: [], optionalParameters: [], auxiliaryVariables: []), at: .unknown)
+        symbolTable.defineSymbol(name: "PRE-TAKE", type: .routine(parameters: [], optionalParameters: [], auxiliaryVariables: []), at: .unknown)
+        symbolTable.defineSymbol(name: "TAKEBIT", type: .constant(value: .number(1, .unknown)), at: .unknown)
+
+        var generator = ZAPCodeGenerator(symbolTable: symbolTable, version: .v5, optimizationLevel: 0)
+
+        let location = createTestLocation()
+
+        // Create SYNTAX declaration: TAKE OBJECT (FIND TAKEBIT) (HELD CARRIED) = V-TAKE PRE-TAKE
+        let syntaxDecl = ZILSyntaxDeclaration(
+            verb: "TAKE",
+            pattern: [
+                .object("OBJ1", constraints: [
+                    .atom("FIND", location),
+                    .atom("TAKEBIT", location),
+                    .atom("HELD", location),
+                    .atom("CARRIED", location)
+                ])
+            ],
+            action: "V-TAKE PRE-TAKE",
+            location: location
+        )
+
+        let result = try generator.generateCode(from: [.syntax(syntaxDecl)])
+
+        // Verify syntax table section exists
+        #expect(result.contains("; Syntax Action Tables"))
+
+        // Verify SYNTAX pattern label is generated
+        #expect(result.contains("SYNTAX-TAKE-1::"))
+
+        // Verify action and preaction references
+        #expect(result.contains(".WORD V-TAKE") || result.contains("V-TAKE"))
+        #expect(result.contains(".WORD PRE-TAKE") || result.contains("PRE-TAKE"))
+
+        // Verify pattern encoding (flags and FIND flag)
+        #expect(result.contains(".WORD") && result.contains("TAKEBIT"))
+
+        // Verify pattern ends with 0
+        #expect(result.contains(".WORD 0"))
+
+        // Verify comment describes pattern
+        #expect(result.contains("; Pattern:"))
+        #expect(result.contains("TAKE"))
+    }
+
+    @Test("Multiple SYNTAX declarations generate multiple patterns")
+    func multipleSyntaxDeclarationsGenerateMultiplePatterns() throws {
+        let symbolTable = createTestSymbolTable()
+
+        // Add required symbols
+        symbolTable.defineSymbol(name: "V-TAKE", type: .routine(parameters: [], optionalParameters: [], auxiliaryVariables: []), at: .unknown)
+        symbolTable.defineSymbol(name: "V-DROP", type: .routine(parameters: [], optionalParameters: [], auxiliaryVariables: []), at: .unknown)
+        symbolTable.defineSymbol(name: "V-PUT", type: .routine(parameters: [], optionalParameters: [], auxiliaryVariables: []), at: .unknown)
+
+        var generator = ZAPCodeGenerator(symbolTable: symbolTable, version: .v5, optimizationLevel: 0)
+
+        let location = createTestLocation()
+
+        // Create multiple SYNTAX declarations
+        let syntaxDecls: [ZILDeclaration] = [
+            .syntax(ZILSyntaxDeclaration(
+                verb: "TAKE",
+                pattern: [.object("OBJ1", constraints: [])],
+                action: "V-TAKE",
+                location: location
+            )),
+            .syntax(ZILSyntaxDeclaration(
+                verb: "DROP",
+                pattern: [.object("OBJ1", constraints: [])],
+                action: "V-DROP",
+                location: location
+            )),
+            .syntax(ZILSyntaxDeclaration(
+                verb: "PUT",
+                pattern: [
+                    .object("OBJ1", constraints: []),
+                    .preposition("IN"),
+                    .object("OBJ2", constraints: [])
+                ],
+                action: "V-PUT",
+                location: location
+            ))
+        ]
+
+        let result = try generator.generateCode(from: syntaxDecls)
+
+        // Verify all syntax patterns are generated
+        #expect(result.contains("SYNTAX-TAKE-1::"))
+        #expect(result.contains("SYNTAX-DROP-1::"))
+        #expect(result.contains("SYNTAX-PUT-1::"))
+
+        // Verify all action references
+        #expect(result.contains("V-TAKE"))
+        #expect(result.contains("V-DROP"))
+        #expect(result.contains("V-PUT"))
+
+        // Verify PUT pattern has preposition
+        #expect(result.contains("IN") || result.contains("?IN"))
+
+        // Verify pattern comments
+        #expect(result.contains("; Pattern: TAKE"))
+        #expect(result.contains("; Pattern: DROP"))
+        #expect(result.contains("; Pattern: PUT"))
+    }
+
+    @Test("SYNTAX with complex constraints generates correct flags")
+    func syntaxWithComplexConstraintsGeneratesCorrectFlags() throws {
+        let symbolTable = createTestSymbolTable()
+
+        symbolTable.defineSymbol(name: "V-ATTACK", type: .routine(parameters: [], optionalParameters: [], auxiliaryVariables: []), at: .unknown)
+        symbolTable.defineSymbol(name: "ACTORBIT", type: .constant(value: .number(1, .unknown)), at: .unknown)
+        symbolTable.defineSymbol(name: "WEAPONBIT", type: .constant(value: .number(2, .unknown)), at: .unknown)
+
+        var generator = ZAPCodeGenerator(symbolTable: symbolTable, version: .v5, optimizationLevel: 0)
+
+        let location = createTestLocation()
+
+        // Create complex SYNTAX: ATTACK OBJECT (FIND ACTORBIT) (ON-GROUND IN-ROOM) WITH OBJECT (FIND WEAPONBIT) (HELD CARRIED)
+        let syntaxDecl = ZILSyntaxDeclaration(
+            verb: "ATTACK",
+            pattern: [
+                .object("OBJ1", constraints: [
+                    .atom("FIND", location),
+                    .atom("ACTORBIT", location),
+                    .atom("ON-GROUND", location),
+                    .atom("IN-ROOM", location)
+                ]),
+                .preposition("WITH"),
+                .object("OBJ2", constraints: [
+                    .atom("FIND", location),
+                    .atom("WEAPONBIT", location),
+                    .atom("HELD", location),
+                    .atom("CARRIED", location)
+                ])
+            ],
+            action: "V-ATTACK",
+            location: location
+        )
+
+        let result = try generator.generateCode(from: [.syntax(syntaxDecl)])
+
+        // Verify syntax pattern label
+        #expect(result.contains("SYNTAX-ATTACK-1::"))
+
+        // Verify action reference
+        #expect(result.contains("V-ATTACK"))
+
+        // Verify both FIND flags are encoded
+        #expect(result.contains("ACTORBIT"))
+        #expect(result.contains("WEAPONBIT"))
+
+        // Verify preposition
+        #expect(result.contains("WITH") || result.contains("?WITH"))
+
+        // Verify pattern has hex flag values (ON-GROUND and IN-ROOM should set specific bits)
+        #expect(result.contains("$") && result.contains(".WORD"))
+
+        // Verify pattern comment describes complex structure
+        let patternCommentRegion = result.components(separatedBy: "SYNTAX-ATTACK-1::").last ?? ""
+        #expect(patternCommentRegion.contains("ATTACK"))
     }
 }

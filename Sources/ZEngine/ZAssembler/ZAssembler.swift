@@ -25,6 +25,9 @@ public class ZAssembler {
     /// The target Z-Machine version for this assembly
     public let version: ZMachineVersion
 
+    /// Compilation context with directive settings
+    public let compilationContext: CompilationContext
+
     /// Current assembly state and symbol tracking
     private var state = AssemblyState()
 
@@ -36,11 +39,14 @@ public class ZAssembler {
 
     /// Creates a new Z-Machine assembler for the specified version
     ///
-    /// - Parameter version: Target Z-Machine version (defaults to v5)
-    public init(version: ZMachineVersion = .v5) {
+    /// - Parameters:
+    ///   - version: Target Z-Machine version (defaults to v5)
+    ///   - compilationContext: Compilation context with directive settings (defaults to new context)
+    public init(version: ZMachineVersion = .v5, compilationContext: CompilationContext = CompilationContext()) {
         self.version = version
+        self.compilationContext = compilationContext
         self.encoder = InstructionEncoder(version: version)
-        self.memoryLayout = MemoryLayoutManager(version: version)
+        self.memoryLayout = MemoryLayoutManager(version: version, compilationContext: compilationContext)
     }
 
     /// Assembles ZAP source code into Z-Machine bytecode
@@ -55,7 +61,7 @@ public class ZAssembler {
         // Reset state for new assembly
         state = AssemblyState()
         encoder = InstructionEncoder(version: version)
-        memoryLayout = MemoryLayoutManager(version: version)
+        memoryLayout = MemoryLayoutManager(version: version, compilationContext: compilationContext)
 
         // Parse the ZAP source into assembly statements
         let parser = ZAPParser()
@@ -269,6 +275,23 @@ public class ZAssembler {
 
         case "END":
             // End of assembly marker
+            return address
+
+        case "TABLE":
+            // Mark table start (documentation marker, no bytecode emitted)
+            return address
+
+        case "ENDT":
+            // Mark table end (documentation marker, no bytecode emitted)
+            return address
+
+        case "PROP":
+            // Property header directive
+            // Format: .PROP length,property-id
+            return address
+
+        case "STRL":
+            // String literal directive for object short names
             return address
 
         default:

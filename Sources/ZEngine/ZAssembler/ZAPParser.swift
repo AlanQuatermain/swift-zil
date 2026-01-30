@@ -48,22 +48,39 @@ public class ZAPParser {
     private func parseLine(_ line: String, at location: SourceLocation) throws -> ZAPStatement {
         // Handle labels (either standalone or with instruction on same line)
         if line.contains(":") {
-            let colonIndex = line.firstIndex(of: ":")!
-            let labelName = String(line[..<colonIndex]).trimmingCharacters(in: .whitespaces)
-            let remainder = String(line[line.index(after: colonIndex)...]).trimmingCharacters(in: .whitespaces)
+            // Check for double-colon (::) labels first (data/table labels)
+            if line.contains("::") {
+                let doubleColonIndex = line.range(of: "::")!.lowerBound
+                let labelName = String(line[..<doubleColonIndex]).trimmingCharacters(in: .whitespaces)
+                let remainder = String(line[line.index(doubleColonIndex, offsetBy: 2)...]).trimmingCharacters(in: .whitespaces)
 
-            if remainder.isEmpty {
-                // Standalone label
-                return .label(labelName, location)
-            } else {
-                // Label with instruction on same line - parse the instruction part
-                let instructionStatement = try parseInstruction(remainder, at: location)
-                // Extract the instruction from the statement
-                if case .instruction(let instruction, _) = instructionStatement {
-                    return .instruction(instruction, location)
+                if remainder.isEmpty {
+                    // Standalone label with ::
+                    return .label(labelName, location)
                 } else {
-                    // This shouldn't happen, but handle gracefully
-                    return instructionStatement
+                    // Label with directive/instruction on same line
+                    // Recursively parse the remainder to handle directives/instructions properly
+                    return try parseLine(remainder, at: location)
+                }
+            } else {
+                // Single colon label
+                let colonIndex = line.firstIndex(of: ":")!
+                let labelName = String(line[..<colonIndex]).trimmingCharacters(in: .whitespaces)
+                let remainder = String(line[line.index(after: colonIndex)...]).trimmingCharacters(in: .whitespaces)
+
+                if remainder.isEmpty {
+                    // Standalone label
+                    return .label(labelName, location)
+                } else {
+                    // Label with instruction on same line - parse the instruction part
+                    let instructionStatement = try parseInstruction(remainder, at: location)
+                    // Extract the instruction from the statement
+                    if case .instruction(let instruction, _) = instructionStatement {
+                        return .instruction(instruction, location)
+                    } else {
+                        // This shouldn't happen, but handle gracefully
+                        return instructionStatement
+                    }
                 }
             }
         }
@@ -72,20 +89,16 @@ public class ZAPParser {
         if line.hasPrefix(".") {
             let statement = try parseDirective(line, at: location)
 
-            // Update object context based on directive
-            if case .directive(let directive, _) = statement {
-                if directive.name.uppercased() == "OBJECT" {
-                    inObjectBlock = true
-                } else if directive.name.uppercased() == "ENDOBJECT" {
-                    inObjectBlock = false
-                }
-            }
+            // Note: Our code generator produces single-line .OBJECT directives
+            // with all attributes and relationships on the same line, matching
+            // authentic Infocom ZAP format. We do NOT use object blocks.
+            // Therefore, we should NOT set inObjectBlock = true.
 
             return statement
         }
 
-        // Handle object properties (indented lines within object blocks)
-        if inObjectBlock && (line.hasPrefix("\t") || line.hasPrefix("    ")) {
+        // Handle object properties (lines within object blocks that aren't directives)
+        if inObjectBlock && !line.hasPrefix(".") {
             return try parseObjectProperty(line, at: location)
         }
 

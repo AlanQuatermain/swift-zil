@@ -79,6 +79,9 @@ public enum TokenType: Sendable, Equatable {
     /// Indirection operator `!` - dereferences atoms and variables at runtime
     case indirection
 
+    /// Quote operator `'` - used for macro parameters and symbolic references
+    case quote
+
     // MARK: - Literals
 
     /// A numeric literal value
@@ -209,6 +212,7 @@ extension TokenType {
         case .leftParen: return "opening parenthesis '('"
         case .rightParen: return "closing parenthesis ')'"
         case .indirection: return "indirection operator '!'"
+        case .quote: return "quote operator '\''"
         case .number: return "number literal"
         case .string: return "string literal"
         case .atom: return "atom"

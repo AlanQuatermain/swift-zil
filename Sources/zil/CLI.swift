@@ -219,26 +219,49 @@ struct BuildCommand: ParsableCommand {
         let parser = try ZILParser(lexer: lexer, filePath: inputPath)
         let declarations = try parser.parseProgram()
 
-        print("Generating ZAP assembly...")
-        let symbolTable = SymbolTableManager()
-        var codeGenerator = ZAPCodeGenerator(symbolTable: symbolTable, version: zmachineVersion, optimizationLevel: optimize)
-        let zapCode = try codeGenerator.generateCode(from: declarations)
+        // Perform semantic analysis to build compilation context
+        print("Performing semantic analysis...")
+        let analyzer = SemanticAnalyzer()
+        let analysisResult = analyzer.analyzeProgram(declarations)
 
-        if assemblyOnly {
-            // Write ZAP assembly file
-            print("Writing ZAP assembly to \(outputPath)...")
-            try zapCode.write(toFile: outputPath, atomically: true, encoding: .utf8)
-            print("Assembly generation complete!")
-        } else {
-            // Assemble to bytecode
-            print("Assembling to Z-Machine bytecode...")
-            let assembler = ZAssembler(version: zmachineVersion)
-            let bytecode = try assembler.assemble(zapCode)
+        // Check for semantic errors
+        switch analysisResult {
+        case .failure(let diagnostics):
+            print("\nSemantic Analysis Errors:")
+            for diagnostic in diagnostics {
+                print("  Error: \(diagnostic.message)")
+                print("    at \(diagnostic.location.file):\(diagnostic.location.line):\(diagnostic.location.column)")
+                if let context = diagnostic.context {
+                    print("    context: \(context)")
+                }
+            }
+            print("\nBuild failed due to semantic errors.")
+            throw ExitCode.validationFailure
+        case .success:
+            // Get compilation context from analyzer
+            let compilationContext = analyzer.getCompilationContext()
 
-            // Write story file
-            print("Writing story file to \(outputPath)...")
-            try bytecode.write(to: URL(fileURLWithPath: outputPath))
-            print("Build complete!")
+            print("Generating ZAP assembly...")
+            let symbolTable = SymbolTableManager()
+            var codeGenerator = ZAPCodeGenerator(symbolTable: symbolTable, version: zmachineVersion, optimizationLevel: optimize)
+            let zapCode = try codeGenerator.generateCode(from: declarations)
+
+            if assemblyOnly {
+                // Write ZAP assembly file
+                print("Writing ZAP assembly to \(outputPath)...")
+                try zapCode.write(toFile: outputPath, atomically: true, encoding: .utf8)
+                print("Assembly generation complete!")
+            } else {
+                // Assemble to bytecode with compilation context
+                print("Assembling to Z-Machine bytecode...")
+                let assembler = ZAssembler(version: zmachineVersion, compilationContext: compilationContext)
+                let bytecode = try assembler.assemble(zapCode)
+
+                // Write story file
+                print("Writing story file to \(outputPath)...")
+                try bytecode.write(to: URL(fileURLWithPath: outputPath))
+                print("Build complete!")
+            }
         }
     }
 }

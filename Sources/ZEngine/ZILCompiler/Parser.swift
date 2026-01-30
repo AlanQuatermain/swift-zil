@@ -40,6 +40,9 @@ public class ZILParser {
     /// Stack of included files to detect circular dependencies
     private var includeStack: [String] = []
 
+    /// Macro processor for macro expansion
+    private let macroProcessor: MacroProcessor
+
     /// Whether we've reached the end of the token stream
     private var isAtEnd: Bool {
         if case .endOfFile = currentToken.type {
@@ -59,6 +62,7 @@ public class ZILParser {
     public init(lexer: ZILLexer, filePath: String? = nil) throws {
         self.lexer = lexer
         self.currentFilePath = filePath
+        self.macroProcessor = MacroProcessor()
         self.currentToken = try lexer.nextToken()
     }
 
@@ -80,7 +84,25 @@ public class ZILParser {
                 if case .insertFile(let insertFile) = declaration {
                     let includedDeclarations = try processInsertFile(insertFile)
                     declarations.append(contentsOf: includedDeclarations)
-                } else {
+                }
+                // Handle DEFMAC declarations by registering them with the macro processor
+                else if case .defmac(let defmac) = declaration {
+                    let success = macroProcessor.defineMacro(
+                        name: defmac.name,
+                        parameters: defmac.parameters,
+                        body: defmac.body,
+                        at: defmac.location
+                    )
+                    if !success {
+                        // If macro definition failed, check diagnostics for the reason
+                        let diagnostics = macroProcessor.getDiagnostics()
+                        if let lastDiagnostic = diagnostics.last {
+                            throw ParseError.macroExpansionFailed(lastDiagnostic.message, location: defmac.location)
+                        }
+                    }
+                    declarations.append(declaration)
+                }
+                else {
                     declarations.append(declaration)
                 }
             }
@@ -253,6 +275,32 @@ public class ZILParser {
             return .set(try parseSetDeclaration(startLocation: startLocation))
         case "DIRECTIONS":
             return .directions(try parseDirectionsDeclaration(startLocation: startLocation))
+        case "ZIP-OPTIONS":
+            return .zipOptions(try parseZipOptionsDeclaration(startLocation: startLocation))
+        case "ORDER-OBJECTS?":
+            return .orderObjects(try parseOrderObjectsDeclaration(startLocation: startLocation))
+        case "ORDER-TREE?":
+            return .orderTree(try parseOrderTreeDeclaration(startLocation: startLocation))
+        case "ORDER-FLAGS?":
+            return .orderFlags(try parseOrderFlagsDeclaration(startLocation: startLocation))
+        case "ROUTINE-FLAGS":
+            return .routineFlags(try parseRoutineFlagsDeclaration(startLocation: startLocation))
+        case "FILE-FLAGS":
+            return .fileFlags(try parseFileFlagsDeclaration(startLocation: startLocation))
+        case "DEFMAC":
+            return .defmac(try parseDefmacDeclaration(startLocation: startLocation))
+        case "SYNTAX":
+            return .syntax(try parseSyntaxDeclaration(startLocation: startLocation))
+        case "SYNONYM":
+            return .synonym(try parseSynonymDeclaration(startLocation: startLocation))
+        case "PREP-SYNONYM":
+            return .synonym(try parsePrepSynonymDeclaration(startLocation: startLocation))
+        case "VERB-SYNONYM":
+            return .synonym(try parseVerbSynonymDeclaration(startLocation: startLocation))
+        case "ADJ-SYNONYM":
+            return .synonym(try parseAdjSynonymDeclaration(startLocation: startLocation))
+        case "BUZZ":
+            return .buzz(try parseBuzzDeclaration(startLocation: startLocation))
         default:
             // Parse the full expression to catch any syntax errors
             var elements: [ZILExpression] = [.atom(keyword, startLocation)]
@@ -604,6 +652,601 @@ public class ZILParser {
         return ZILDirectionsDeclaration(directions: directions, location: startLocation)
     }
 
+    /// Parses a ZIP-OPTIONS declaration.
+    private func parseZipOptionsDeclaration(startLocation: SourceLocation) throws -> ZILZipOptionsDeclaration {
+        try advance() // Skip ZIP-OPTIONS keyword
+
+        var options: [String] = []
+
+        while !check(.rightAngle) && !isAtEnd {
+            // Skip comments
+            if case .lineComment = currentToken.type {
+                try advance()
+                continue
+            }
+
+            // Skip strings (comments in ZIP-OPTIONS)
+            if case .string(_) = currentToken.type {
+                try advance()
+                continue
+            }
+
+            guard case .atom(let option) = currentToken.type else {
+                throw ParseError.expectedAtom(location: currentToken.location)
+            }
+            options.append(option)
+            try advance()
+        }
+
+        try consume(.rightAngle, "Expected '>' to close ZIP-OPTIONS declaration")
+
+        return ZILZipOptionsDeclaration(options: options, location: startLocation)
+    }
+
+    /// Parses an ORDER-OBJECTS? declaration.
+    private func parseOrderObjectsDeclaration(startLocation: SourceLocation) throws -> ZILOrderObjectsDeclaration {
+        try advance() // Skip ORDER-OBJECTS? keyword
+
+        guard case .atom(let ordering) = currentToken.type else {
+            throw ParseError.expectedAtom(location: currentToken.location)
+        }
+        try advance()
+
+        try consume(.rightAngle, "Expected '>' to close ORDER-OBJECTS? declaration")
+
+        return ZILOrderObjectsDeclaration(ordering: ordering, location: startLocation)
+    }
+
+    /// Parses an ORDER-TREE? declaration.
+    private func parseOrderTreeDeclaration(startLocation: SourceLocation) throws -> ZILOrderTreeDeclaration {
+        try advance() // Skip ORDER-TREE? keyword
+
+        guard case .atom(let ordering) = currentToken.type else {
+            throw ParseError.expectedAtom(location: currentToken.location)
+        }
+        try advance()
+
+        try consume(.rightAngle, "Expected '>' to close ORDER-TREE? declaration")
+
+        return ZILOrderTreeDeclaration(ordering: ordering, location: startLocation)
+    }
+
+    /// Parses an ORDER-FLAGS? declaration.
+    private func parseOrderFlagsDeclaration(startLocation: SourceLocation) throws -> ZILOrderFlagsDeclaration {
+        try advance() // Skip ORDER-FLAGS? keyword
+
+        // First atom should be the order keyword (typically "LAST")
+        guard case .atom(let order) = currentToken.type else {
+            throw ParseError.expectedAtom(location: currentToken.location)
+        }
+        try advance()
+
+        var flags: [String] = []
+
+        while !check(.rightAngle) && !isAtEnd {
+            // Skip comments
+            if case .lineComment = currentToken.type {
+                try advance()
+                continue
+            }
+
+            // Skip strings (comments)
+            if case .string(_) = currentToken.type {
+                try advance()
+                continue
+            }
+
+            guard case .atom(let flag) = currentToken.type else {
+                throw ParseError.expectedAtom(location: currentToken.location)
+            }
+            flags.append(flag)
+            try advance()
+        }
+
+        try consume(.rightAngle, "Expected '>' to close ORDER-FLAGS? declaration")
+
+        return ZILOrderFlagsDeclaration(order: order, flags: flags, location: startLocation)
+    }
+
+    /// Parses a ROUTINE-FLAGS declaration.
+    private func parseRoutineFlagsDeclaration(startLocation: SourceLocation) throws -> ZILRoutineFlagsDeclaration {
+        try advance() // Skip ROUTINE-FLAGS keyword
+
+        var flags: [String] = []
+
+        while !check(.rightAngle) && !isAtEnd {
+            // Skip comments
+            if case .lineComment = currentToken.type {
+                try advance()
+                continue
+            }
+
+            // Skip strings (comments)
+            if case .string(_) = currentToken.type {
+                try advance()
+                continue
+            }
+
+            guard case .atom(let flag) = currentToken.type else {
+                throw ParseError.expectedAtom(location: currentToken.location)
+            }
+            flags.append(flag)
+            try advance()
+        }
+
+        try consume(.rightAngle, "Expected '>' to close ROUTINE-FLAGS declaration")
+
+        return ZILRoutineFlagsDeclaration(flags: flags, location: startLocation)
+    }
+
+    /// Parses a FILE-FLAGS declaration.
+    private func parseFileFlagsDeclaration(startLocation: SourceLocation) throws -> ZILFileFlagsDeclaration {
+        try advance() // Skip FILE-FLAGS keyword
+
+        var flags: [String] = []
+
+        while !check(.rightAngle) && !isAtEnd {
+            // Skip comments
+            if case .lineComment = currentToken.type {
+                try advance()
+                continue
+            }
+
+            // Skip strings (comments)
+            if case .string(_) = currentToken.type {
+                try advance()
+                continue
+            }
+
+            guard case .atom(let flag) = currentToken.type else {
+                throw ParseError.expectedAtom(location: currentToken.location)
+            }
+            flags.append(flag)
+            try advance()
+        }
+
+        try consume(.rightAngle, "Expected '>' to close FILE-FLAGS declaration")
+
+        return ZILFileFlagsDeclaration(flags: flags, location: startLocation)
+    }
+
+    /// Parses a SYNTAX declaration.
+    ///
+    /// Format: `<SYNTAX verb [pattern-elements...] = action [preaction]>`
+    ///
+    /// Example: `<SYNTAX TAKE OBJECT (FIND TAKEBIT) = V-TAKE PRE-TAKE>`
+    private func parseSyntaxDeclaration(startLocation: SourceLocation) throws -> ZILSyntaxDeclaration {
+        try advance() // Skip SYNTAX keyword
+
+        // Parse verb (first atom)
+        guard case .atom(let verb) = currentToken.type else {
+            throw ParseError.expectedAtom(location: currentToken.location)
+        }
+        try advance()
+
+        // Parse pattern elements until '='
+        var pattern: [ZILSyntaxElement] = []
+        var objectCount = 0  // Track OBJECT keywords for labeling
+
+        while !check(.rightAngle) && !isAtEnd {
+            // Check for '=' separator
+            if case .atom(let word) = currentToken.type, word == "=" {
+                break
+            }
+
+            let element = try parseSyntaxElement(objectIndex: &objectCount)
+            pattern.append(element)
+        }
+
+        // Consume '=' separator
+        guard case .atom(let separator) = currentToken.type, separator == "=" else {
+            throw ParseError.invalidSyntax(
+                "Expected '=' in SYNTAX declaration",
+                location: currentToken.location
+            )
+        }
+        try advance()
+
+        // Parse action and optional preaction (space-separated atoms)
+        var actionParts: [String] = []
+        while !check(.rightAngle) && !isAtEnd {
+            guard case .atom(let actionPart) = currentToken.type else {
+                throw ParseError.expectedAtom(location: currentToken.location)
+            }
+            actionParts.append(actionPart)
+            try advance()
+        }
+
+        guard !actionParts.isEmpty else {
+            throw ParseError.invalidSyntax(
+                "Expected action routine in SYNTAX declaration",
+                location: currentToken.location
+            )
+        }
+
+        try consume(.rightAngle, "Expected '>' to close SYNTAX declaration")
+
+        // Join action parts with space (e.g., "V-TAKE PRE-TAKE")
+        // SyntaxTableBuilder will split these later
+        let action = actionParts.joined(separator: " ")
+
+        return ZILSyntaxDeclaration(
+            verb: verb,
+            pattern: pattern,
+            action: action,
+            location: startLocation
+        )
+    }
+
+    /// Parses a SYNTAX pattern element (OBJECT or preposition).
+    ///
+    /// - Parameter objectIndex: Running count of OBJECT keywords (modified by this method)
+    /// - Returns: A syntax element (either .object or .preposition)
+    private func parseSyntaxElement(objectIndex: inout Int) throws -> ZILSyntaxElement {
+        // Check for OBJECT keyword (case-insensitive)
+        if case .atom(let word) = currentToken.type, word.uppercased() == "OBJECT" {
+            try advance()
+            var constraints: [ZILExpression] = []
+
+            // Parse constraint groups in parentheses: (FIND flags) (location specs)
+            // All constraints are flattened into a single array
+            while check(.leftParen) {
+                try advance() // consume '('
+
+                while !check(.rightParen) && !isAtEnd {
+                    constraints.append(try parseExpressionInternal())
+                }
+
+                try consume(.rightParen, "Expected ')' after OBJECT constraints")
+            }
+
+            // Generate sequential label for this OBJECT (OBJ1, OBJ2, etc.)
+            objectIndex += 1
+            let label = "OBJ\(objectIndex)"
+
+            return .object(label, constraints: constraints)
+        }
+
+        // Otherwise it's a preposition or literal word
+        guard case .atom(let word) = currentToken.type else {
+            throw ParseError.invalidSyntax(
+                "Expected OBJECT or preposition in SYNTAX pattern",
+                location: currentToken.location
+            )
+        }
+        try advance()
+
+        return .preposition(word)
+    }
+
+    /// Parses a DEFMAC declaration.
+    ///
+    /// Format: `<DEFMAC name (parameters...) body>`
+    ///
+    /// Example: `<DEFMAC VERB? ("ARGS" ATMS) <MULTIFROB PRSA .ATMS>>`
+    private func parseDefmacDeclaration(startLocation: SourceLocation) throws -> ZILDefmacDeclaration {
+        try advance() // Skip DEFMAC keyword
+
+        // Parse macro name
+        guard case .atom(let name) = currentToken.type else {
+            throw ParseError.expectedAtom(location: currentToken.location)
+        }
+        try advance()
+
+        // Parse parameter list
+        try consume(.leftParen, "Expected '(' for macro parameters")
+        let parameters = try parseMacroParameterList()
+        try consume(.rightParen, "Expected ')' after macro parameters")
+
+        // Parse macro body (single expression)
+        let body = try parseExpressionInternal()
+
+        try consume(.rightAngle, "Expected '>' to close DEFMAC")
+
+        return ZILDefmacDeclaration(name: name, parameters: parameters, body: body, location: startLocation)
+    }
+
+    /// Parses a macro parameter list with support for various parameter types.
+    ///
+    /// Parameter types:
+    /// - Standard: `PARAM`
+    /// - Quoted: `'PARAM`
+    /// - Variable args: `"ARGS" NAME`
+    /// - Optional: `"OPTIONAL" 'NAME` or `"OPTIONAL" 'NAME defaultValue`
+    private func parseMacroParameterList() throws -> [ZILMacroParameter] {
+        var parameters: [ZILMacroParameter] = []
+        var seenArgs = false
+        var seenOptional = false
+
+        while !check(.rightParen) && !isAtEnd {
+            // Handle "ARGS" for variable arguments
+            if case .string(let str) = currentToken.type, str == "ARGS" {
+                if seenArgs {
+                    throw ParseError.invalidSyntax("Multiple 'ARGS' parameters not allowed", location: currentToken.location)
+                }
+                if seenOptional {
+                    throw ParseError.invalidSyntax("'ARGS' must come before 'OPTIONAL' parameters", location: currentToken.location)
+                }
+                seenArgs = true
+                try advance()
+
+                guard case .atom(let name) = currentToken.type else {
+                    throw ParseError.expectedAtom(location: currentToken.location)
+                }
+                try advance()
+                parameters.append(.variableArgs(name))
+                continue
+            }
+
+            // Handle "OPTIONAL" keyword
+            if case .string(let str) = currentToken.type, str == "OPTIONAL" {
+                seenOptional = true
+                try advance()
+
+                // Parse the optional parameter (might be quoted)
+                if case .quote = currentToken.type {
+                    try advance()
+                }
+
+                guard case .atom(let paramName) = currentToken.type else {
+                    throw ParseError.expectedAtom(location: currentToken.location)
+                }
+                try advance()
+
+                // Check for default value (another expression)
+                // Only parse complex expressions as defaults, not bare atoms (which would be next param)
+                var defaultValue: ZILExpression? = nil
+                if !check(.rightParen) && !check(.string("OPTIONAL")) && !check(.quote) {
+                    // Only parse default if it's a complex expression (list or wrapped value)
+                    if case .leftAngle = currentToken.type {
+                        defaultValue = try parseExpressionInternal()
+                    } else if case .leftParen = currentToken.type {
+                        defaultValue = try parseExpressionInternal()
+                    }
+                    // Bare atoms are NOT parsed as defaults - they're the next parameter
+                }
+
+                parameters.append(.optional(paramName, defaultValue))
+                continue
+            }
+
+            // Handle quoted parameters ('PARAM)
+            if case .quote = currentToken.type {
+                if seenOptional {
+                    throw ParseError.invalidSyntax("Quoted parameters must come before 'OPTIONAL' parameters", location: currentToken.location)
+                }
+                try advance()
+
+                guard case .atom(let paramName) = currentToken.type else {
+                    throw ParseError.expectedAtom(location: currentToken.location)
+                }
+                try advance()
+                parameters.append(.quoted(paramName))
+                continue
+            }
+
+            // Handle standard parameters
+            if case .atom(let name) = currentToken.type {
+                if seenOptional {
+                    throw ParseError.invalidSyntax("Standard parameters must come before 'OPTIONAL' parameters", location: currentToken.location)
+                }
+                try advance()
+                parameters.append(.standard(name))
+                continue
+            }
+
+            throw ParseError.invalidSyntax("Invalid macro parameter", location: currentToken.location)
+        }
+
+        return parameters
+    }
+
+    /// Parses a SYNONYM declaration.
+    ///
+    /// Format: `<SYNONYM canonical-word synonym1 synonym2 ...>`
+    ///
+    /// Example: `<SYNONYM NORTH N>`, `<SYNONYM TAKE CARRY GET HOLD>`
+    ///
+    /// The first word is the canonical word; all remaining words are synonyms
+    /// that will be treated as equivalent to the canonical word by the parser.
+    private func parseSynonymDeclaration(startLocation: SourceLocation) throws -> ZILSynonymDeclaration {
+        try advance() // Skip SYNONYM keyword
+
+        // Must have at least two words (canonical + at least one synonym)
+        var words: [String] = []
+
+        while !check(.rightAngle) && !isAtEnd {
+            guard case .atom(let word) = currentToken.type else {
+                throw ParseError.expectedAtom(location: currentToken.location)
+            }
+            words.append(word)
+            try advance()
+        }
+
+        try consume(.rightAngle, "Expected '>' to close SYNONYM")
+
+        // Validate: need at least 2 words (canonical + 1 synonym)
+        guard words.count >= 2 else {
+            throw ParseError.invalidSyntax(
+                "SYNONYM requires at least two words (canonical word and one synonym)",
+                location: startLocation
+            )
+        }
+
+        // First word is canonical, rest are synonyms
+        let canonical = words[0]
+        let synonyms = Array(words.dropFirst())
+
+        return ZILSynonymDeclaration(
+            words: synonyms,
+            canonical: canonical,
+            location: startLocation
+        )
+    }
+
+    /// Parses a PREP-SYNONYM declaration.
+    ///
+    /// Format: `<PREP-SYNONYM canonical-word synonym1 synonym2 ...>`
+    ///
+    /// Example: `<PREP-SYNONYM IN INSIDE INTO>`
+    ///
+    /// Identical to SYNONYM but marks words as prepositions in the vocabulary system.
+    private func parsePrepSynonymDeclaration(startLocation: SourceLocation) throws -> ZILSynonymDeclaration {
+        try advance() // Skip PREP-SYNONYM keyword
+
+        var words: [String] = []
+
+        while !check(.rightAngle) && !isAtEnd {
+            guard case .atom(let word) = currentToken.type else {
+                throw ParseError.expectedAtom(location: currentToken.location)
+            }
+            words.append(word)
+            try advance()
+        }
+
+        try consume(.rightAngle, "Expected '>' to close PREP-SYNONYM")
+
+        guard words.count >= 2 else {
+            throw ParseError.invalidSyntax(
+                "PREP-SYNONYM requires at least two words (canonical word and one synonym)",
+                location: startLocation
+            )
+        }
+
+        let canonical = words[0]
+        let synonyms = Array(words.dropFirst())
+
+        return ZILSynonymDeclaration(
+            words: synonyms,
+            canonical: canonical,
+            type: .preposition,
+            location: startLocation
+        )
+    }
+
+    /// Parses a VERB-SYNONYM declaration.
+    ///
+    /// Format: `<VERB-SYNONYM canonical-word synonym1 synonym2 ...>`
+    ///
+    /// Example: `<VERB-SYNONYM TAKE GET GRAB>`
+    ///
+    /// Identical to SYNONYM but marks words as verbs in the vocabulary system.
+    private func parseVerbSynonymDeclaration(startLocation: SourceLocation) throws -> ZILSynonymDeclaration {
+        try advance() // Skip VERB-SYNONYM keyword
+
+        var words: [String] = []
+
+        while !check(.rightAngle) && !isAtEnd {
+            guard case .atom(let word) = currentToken.type else {
+                throw ParseError.expectedAtom(location: currentToken.location)
+            }
+            words.append(word)
+            try advance()
+        }
+
+        try consume(.rightAngle, "Expected '>' to close VERB-SYNONYM")
+
+        guard words.count >= 2 else {
+            throw ParseError.invalidSyntax(
+                "VERB-SYNONYM requires at least two words (canonical word and one synonym)",
+                location: startLocation
+            )
+        }
+
+        let canonical = words[0]
+        let synonyms = Array(words.dropFirst())
+
+        return ZILSynonymDeclaration(
+            words: synonyms,
+            canonical: canonical,
+            type: .verb,
+            location: startLocation
+        )
+    }
+
+    /// Parses an ADJ-SYNONYM declaration.
+    ///
+    /// Format: `<ADJ-SYNONYM canonical-word synonym1 synonym2 ...>`
+    ///
+    /// Example: `<ADJ-SYNONYM BRASS BRONZE COPPER>`
+    ///
+    /// Identical to SYNONYM but marks words as adjectives in the vocabulary system.
+    private func parseAdjSynonymDeclaration(startLocation: SourceLocation) throws -> ZILSynonymDeclaration {
+        try advance() // Skip ADJ-SYNONYM keyword
+
+        var words: [String] = []
+
+        while !check(.rightAngle) && !isAtEnd {
+            guard case .atom(let word) = currentToken.type else {
+                throw ParseError.expectedAtom(location: currentToken.location)
+            }
+            words.append(word)
+            try advance()
+        }
+
+        try consume(.rightAngle, "Expected '>' to close ADJ-SYNONYM")
+
+        guard words.count >= 2 else {
+            throw ParseError.invalidSyntax(
+                "ADJ-SYNONYM requires at least two words (canonical word and one synonym)",
+                location: startLocation
+            )
+        }
+
+        let canonical = words[0]
+        let synonyms = Array(words.dropFirst())
+
+        return ZILSynonymDeclaration(
+            words: synonyms,
+            canonical: canonical,
+            type: .adjective,
+            location: startLocation
+        )
+    }
+
+    /// Parses a BUZZ declaration.
+    ///
+    /// Format: `<BUZZ word1 word2 word3 ...>`
+    ///
+    /// Example: `<BUZZ A AN THE IS AND OF THEN>`
+    ///
+    /// All listed words will be marked as buzzwords (ignored words) in the
+    /// parser's vocabulary dictionary.
+    private func parseBuzzDeclaration(startLocation: SourceLocation) throws -> ZILBuzzDeclaration {
+        try advance() // Skip BUZZ keyword
+
+        var words: [String] = []
+
+        while !check(.rightAngle) && !isAtEnd {
+            // Skip comments within BUZZ declarations
+            if case .lineComment = currentToken.type {
+                try advance()
+                continue
+            }
+
+            guard case .atom(let word) = currentToken.type else {
+                throw ParseError.expectedAtom(location: currentToken.location)
+            }
+            words.append(word)
+            try advance()
+        }
+
+        try consume(.rightAngle, "Expected '>' to close BUZZ")
+
+        // Validate: should have at least one buzzword
+        guard !words.isEmpty else {
+            throw ParseError.invalidSyntax(
+                "BUZZ requires at least one word",
+                location: startLocation
+            )
+        }
+
+        return ZILBuzzDeclaration(
+            words: words,
+            location: startLocation
+        )
+    }
+
     /// Parses expressions (S-expressions, literals, variables).
     private func parseExpressionInternal() throws -> ZILExpression {
         let location = currentToken.location
@@ -670,6 +1313,24 @@ public class ZILParser {
 
         try consume(.rightAngle, "Expected '>' to close expression")
 
+        // Check if first element is a macro call
+        if case .atom(let name, _) = elements.first {
+            if macroProcessor.getMacro(name: name) != nil {
+                let args = Array(elements.dropFirst())
+                let result = macroProcessor.expandMacro(
+                    name: name,
+                    arguments: args,
+                    at: startLocation
+                )
+                switch result {
+                case .success(let expanded):
+                    return expanded
+                case .error(let diagnostic):
+                    throw ParseError.macroExpansionFailed(diagnostic.message, location: startLocation)
+                }
+            }
+        }
+
         return .list(elements, startLocation)
     }
 
@@ -705,12 +1366,13 @@ public class ZILParser {
         let targetExpression = try parseExpressionInternal()
 
         // Validate that the target is a valid indirection target
+        // Per expert confirmation: atoms, global variables, and local variables are all valid
         switch targetExpression {
-        case .atom, .globalVariable:
+        case .atom, .globalVariable, .localVariable:
             // Valid indirection targets
             break
         default:
-            throw ParseError.invalidSyntax("Indirection (!) can only be applied to atoms or global variables", location: startLocation)
+            throw ParseError.invalidSyntax("Indirection (!) can only be applied to atoms, global variables, or local variables", location: startLocation)
         }
 
         return .indirection(targetExpression, startLocation)

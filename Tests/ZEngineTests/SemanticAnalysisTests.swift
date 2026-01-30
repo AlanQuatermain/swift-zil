@@ -1022,4 +1022,745 @@ struct SemanticAnalysisTests {
         // 2. Unused symbols are tracked correctly (defined but not referenced)
         // If we reach this point without throwing, unused symbol handling is working correctly
     }
+
+    @Suite("DEFMAC Semantic Validation")
+    struct DefmacSemanticValidation {
+
+        @Test("Valid macro with parameter references")
+        func validMacroWithParameterReferences() throws {
+            let analyzer = SemanticAnalyzer()
+            let location = SourceLocation(file: "test.zil", line: 1, column: 1)
+
+            // Define a macro that uses its parameters correctly
+            let macroDecl = ZILDeclaration.defmac(ZILDefmacDeclaration(
+                name: "DOUBLE",
+                parameters: [.standard("X")],
+                body: .list([
+                    .atom("FORM", location),
+                    .atom("+", location),
+                    .localVariable("X", location),
+                    .localVariable("X", location)
+                ], location),
+                location: location
+            ))
+
+            let program = [macroDecl]
+            let result = analyzer.analyzeProgram(program)
+
+            guard case .success = result else {
+                Issue.record("Valid macro with parameter references should succeed, but got: \(result)")
+                return
+            }
+
+            let diagnostics = analyzer.getDiagnostics()
+            #expect(diagnostics.isEmpty, "Should have no diagnostics for valid macro")
+        }
+
+        @Test("Recursive macro definition detection")
+        func recursiveMacroDefinitionDetection() throws {
+            let analyzer = SemanticAnalyzer()
+            let location = SourceLocation(file: "test.zil", line: 1, column: 1)
+
+            // Define a macro that calls itself recursively
+            let macroDecl = ZILDeclaration.defmac(ZILDefmacDeclaration(
+                name: "RECURSE",
+                parameters: [.standard("X")],
+                body: .list([
+                    .atom("RECURSE", location),  // Recursive call
+                    .localVariable("X", location)
+                ], location),
+                location: location
+            ))
+
+            let program = [macroDecl]
+            let result = analyzer.analyzeProgram(program)
+
+            guard case .failure(let diagnostics) = result else {
+                Issue.record("Recursive macro should be detected, but got: \(result)")
+                return
+            }
+
+            let recursiveDiags = diagnostics.filter { diagnostic in
+                if case .recursiveMacroDefinition(let name) = diagnostic.code {
+                    return name == "RECURSE"
+                }
+                return false
+            }
+
+            #expect(recursiveDiags.count >= 1, "Should detect recursive macro definition")
+        }
+
+        @Test("Macro with nested recursive call")
+        func macroWithNestedRecursiveCall() throws {
+            let analyzer = SemanticAnalyzer()
+            let location = SourceLocation(file: "test.zil", line: 1, column: 1)
+
+            // Define a macro that calls itself in a nested list
+            let macroDecl = ZILDeclaration.defmac(ZILDefmacDeclaration(
+                name: "NESTED-RECURSE",
+                parameters: [.standard("X")],
+                body: .list([
+                    .atom("FORM", location),
+                    .atom("COND", location),
+                    .list([
+                        .list([
+                            .atom("NESTED-RECURSE", location),  // Nested recursive call
+                            .localVariable("X", location)
+                        ], location),
+                        .atom("TRUE", location)
+                    ], location)
+                ], location),
+                location: location
+            ))
+
+            let program = [macroDecl]
+            let result = analyzer.analyzeProgram(program)
+
+            guard case .failure(let diagnostics) = result else {
+                Issue.record("Nested recursive macro should be detected, but got: \(result)")
+                return
+            }
+
+            let recursiveDiags = diagnostics.filter { diagnostic in
+                if case .recursiveMacroDefinition(let name) = diagnostic.code {
+                    return name == "NESTED-RECURSE"
+                }
+                return false
+            }
+
+            #expect(recursiveDiags.count >= 1, "Should detect nested recursive macro call")
+        }
+
+        @Test("Macro with undefined symbol reference")
+        func macroWithUndefinedSymbolReference() throws {
+            let analyzer = SemanticAnalyzer()
+            let location = SourceLocation(file: "test.zil", line: 1, column: 1)
+
+            // Define a macro that references an undefined symbol
+            let macroDecl = ZILDeclaration.defmac(ZILDefmacDeclaration(
+                name: "BAD-MACRO",
+                parameters: [.standard("X")],
+                body: .list([
+                    .atom("FORM", location),
+                    .atom("UNDEFINED-FUNCTION", location),  // Undefined symbol
+                    .localVariable("X", location)
+                ], location),
+                location: location
+            ))
+
+            let program = [macroDecl]
+            let result = analyzer.analyzeProgram(program)
+
+            guard case .failure(let diagnostics) = result else {
+                Issue.record("Macro with undefined symbol should fail, but got: \(result)")
+                return
+            }
+
+            let undefinedDiags = diagnostics.filter { diagnostic in
+                if case .undefinedSymbol(let name, _) = diagnostic.code {
+                    return name == "UNDEFINED-FUNCTION"
+                }
+                return false
+            }
+
+            #expect(undefinedDiags.count >= 1, "Should detect undefined symbol in macro body")
+        }
+
+        @Test("Macro with all parameter types")
+        func macroWithAllParameterTypes() throws {
+            let analyzer = SemanticAnalyzer()
+            let location = SourceLocation(file: "test.zil", line: 1, column: 1)
+
+            // Define a macro with standard, quoted, ARGS, and OPTIONAL parameters
+            let macroDecl = ZILDeclaration.defmac(ZILDefmacDeclaration(
+                name: "COMPLEX-MACRO",
+                parameters: [
+                    .standard("NORMAL"),
+                    .quoted("QUOTED"),
+                    .variableArgs("ARGS"),
+                    .optional("OPT", .number(42, location))
+                ],
+                body: .list([
+                    .atom("FORM", location),
+                    .atom("LIST", location),
+                    .localVariable("NORMAL", location),
+                    .localVariable("QUOTED", location),
+                    .localVariable("ARGS", location),
+                    .localVariable("OPT", location)
+                ], location),
+                location: location
+            ))
+
+            let program = [macroDecl]
+            let result = analyzer.analyzeProgram(program)
+
+            guard case .success = result else {
+                Issue.record("Macro with all parameter types should succeed, but got: \(result)")
+                return
+            }
+
+            let diagnostics = analyzer.getDiagnostics()
+            #expect(diagnostics.isEmpty, "Should have no diagnostics for valid macro with all parameter types")
+        }
+
+        @Test("Macro parameter references are valid")
+        func macroParameterReferencesAreValid() throws {
+            let analyzer = SemanticAnalyzer()
+            let location = SourceLocation(file: "test.zil", line: 1, column: 1)
+
+            // Define a macro that references its parameters multiple times
+            let macroDecl = ZILDeclaration.defmac(ZILDefmacDeclaration(
+                name: "TRIPLE-ADD",
+                parameters: [.standard("A"), .standard("B"), .standard("C")],
+                body: .list([
+                    .atom("FORM", location),
+                    .atom("+", location),
+                    .localVariable("A", location),
+                    .list([
+                        .atom("+", location),
+                        .localVariable("B", location),
+                        .localVariable("C", location)
+                    ], location)
+                ], location),
+                location: location
+            ))
+
+            let program = [macroDecl]
+            let result = analyzer.analyzeProgram(program)
+
+            guard case .success = result else {
+                Issue.record("Macro parameter references should be valid, but got: \(result)")
+                return
+            }
+
+            let diagnostics = analyzer.getDiagnostics()
+            #expect(diagnostics.isEmpty, "Macro parameters should be recognized as valid local variables")
+        }
+
+        @Test("Macro with global variable reference")
+        func macroWithGlobalVariableReference() throws {
+            let analyzer = SemanticAnalyzer()
+            let location = SourceLocation(file: "test.zil", line: 1, column: 1)
+
+            // Define a global first
+            let globalDecl = ZILDeclaration.global(ZILGlobalDeclaration(
+                name: "SCORE",
+                value: .number(0, location),
+                location: location
+            ))
+
+            // Define a macro that references the global
+            let macroDecl = ZILDeclaration.defmac(ZILDefmacDeclaration(
+                name: "INCREMENT-SCORE",
+                parameters: [.standard("AMOUNT")],
+                body: .list([
+                    .atom("FORM", location),
+                    .atom("SETG", location),
+                    .atom("SCORE", location),
+                    .list([
+                        .atom("+", location),
+                        .globalVariable("SCORE", location),
+                        .localVariable("AMOUNT", location)
+                    ], location)
+                ], location),
+                location: location
+            ))
+
+            let program = [globalDecl, macroDecl]
+            let result = analyzer.analyzeProgram(program)
+
+            guard case .success = result else {
+                Issue.record("Macro with global reference should succeed, but got: \(result)")
+                return
+            }
+
+            let diagnostics = analyzer.getDiagnostics()
+            #expect(diagnostics.isEmpty, "Should have no diagnostics for macro referencing global")
+        }
+
+        @Test("Macro with property reference")
+        func macroWithPropertyReference() throws {
+            let analyzer = SemanticAnalyzer()
+            let location = SourceLocation(file: "test.zil", line: 1, column: 1)
+
+            // Define a property first
+            let propertyDecl = ZILDeclaration.property(ZILPropertyDeclaration(
+                name: "STRENGTH",
+                defaultValue: .number(10, location),
+                location: location
+            ))
+
+            // Define a macro that references the property
+            let macroDecl = ZILDeclaration.defmac(ZILDefmacDeclaration(
+                name: "GET-STRENGTH",
+                parameters: [.quoted("OBJ")],
+                body: .list([
+                    .atom("FORM", location),
+                    .atom("GETP", location),
+                    .localVariable("OBJ", location),
+                    .propertyReference("STRENGTH", location)
+                ], location),
+                location: location
+            ))
+
+            let program = [propertyDecl, macroDecl]
+            let result = analyzer.analyzeProgram(program)
+
+            guard case .success = result else {
+                Issue.record("Macro with property reference should succeed, but got: \(result)")
+                return
+            }
+
+            let diagnostics = analyzer.getDiagnostics()
+            #expect(diagnostics.isEmpty, "Should have no diagnostics for macro referencing property")
+        }
+
+        @Test("Macro with flag reference")
+        func macroWithFlagReference() throws {
+            let analyzer = SemanticAnalyzer()
+            let location = SourceLocation(file: "test.zil", line: 1, column: 1)
+
+            // Define a macro that references a flag (which may or may not be defined)
+            let macroDecl = ZILDeclaration.defmac(ZILDefmacDeclaration(
+                name: "CHECK-TAKEBIT",
+                parameters: [.quoted("OBJ")],
+                body: .list([
+                    .atom("FORM", location),
+                    .atom("FSET?", location),
+                    .localVariable("OBJ", location),
+                    .flagReference("TAKEBIT", location)
+                ], location),
+                location: location
+            ))
+
+            let program = [macroDecl]
+            let result = analyzer.analyzeProgram(program)
+
+            // Flag might not be defined, so we check if analysis handles it
+            switch result {
+            case .success:
+                // If successful, flag reference was handled gracefully
+                break
+            case .failure(let diagnostics):
+                // If failed, should be due to undefined flag
+                let flagDiags = diagnostics.filter { diagnostic in
+                    if case .undefinedSymbol(let name, _) = diagnostic.code {
+                        return name == "TAKEBIT"
+                    }
+                    return false
+                }
+                #expect(flagDiags.count >= 1, "Should detect undefined flag if analysis fails")
+            }
+        }
+
+        @Test("Macro with indirection operator")
+        func macroWithIndirectionOperator() throws {
+            let analyzer = SemanticAnalyzer()
+            let location = SourceLocation(file: "test.zil", line: 1, column: 1)
+
+            // Define a macro that uses indirection on a parameter
+            let macroDecl = ZILDeclaration.defmac(ZILDefmacDeclaration(
+                name: "TELL-ALL",
+                parameters: [.variableArgs("ARGS")],
+                body: .list([
+                    .atom("FORM", location),
+                    .atom("PRINTI", location),
+                    .indirection(.localVariable("ARGS", location), location)
+                ], location),
+                location: location
+            ))
+
+            let program = [macroDecl]
+            let result = analyzer.analyzeProgram(program)
+
+            guard case .success = result else {
+                Issue.record("Macro with indirection operator should succeed, but got: \(result)")
+                return
+            }
+
+            let diagnostics = analyzer.getDiagnostics()
+            #expect(diagnostics.isEmpty, "Should have no diagnostics for macro using indirection")
+        }
+
+        @Test("Real Zork macro example - VERB?")
+        func realZorkMacroVerbExample() throws {
+            let analyzer = SemanticAnalyzer()
+            let location = SourceLocation(file: "test.zil", line: 1, column: 1)
+
+            // Real VERB? macro from Zork 1: <DEFMAC VERB? ("ARGS" ATMS) <MULTIFROB PRSA .ATMS>>
+            let macroDecl = ZILDeclaration.defmac(ZILDefmacDeclaration(
+                name: "VERB?",
+                parameters: [.variableArgs("ATMS")],
+                body: .list([
+                    .atom("MULTIFROB", location),
+                    .atom("PRSA", location),
+                    .localVariable("ATMS", location)
+                ], location),
+                location: location
+            ))
+
+            let program = [macroDecl]
+            let result = analyzer.analyzeProgram(program)
+
+            // This macro references MULTIFROB and PRSA which may not be defined in test
+            switch result {
+            case .success:
+                // If successful, all references were handled
+                break
+            case .failure(let diagnostics):
+                // If failed, should be due to undefined symbols
+                let undefinedDiags = diagnostics.filter { diagnostic in
+                    if case .undefinedSymbol = diagnostic.code {
+                        return true
+                    }
+                    return false
+                }
+                #expect(undefinedDiags.count >= 1, "Should detect undefined symbols if analysis fails")
+            }
+        }
+
+        @Test("Macro with table expression")
+        func macroWithTableExpression() throws {
+            let analyzer = SemanticAnalyzer()
+            let location = SourceLocation(file: "test.zil", line: 1, column: 1)
+
+            // Define a macro that creates a table
+            let macroDecl = ZILDeclaration.defmac(ZILDefmacDeclaration(
+                name: "MAKE-TABLE",
+                parameters: [.variableArgs("ELEMENTS")],
+                body: .list([
+                    .atom("FORM", location),
+                    .atom("TABLE", location),
+                    .localVariable("ELEMENTS", location)
+                ], location),
+                location: location
+            ))
+
+            let program = [macroDecl]
+            let result = analyzer.analyzeProgram(program)
+
+            guard case .success = result else {
+                Issue.record("Macro with table expression should succeed, but got: \(result)")
+                return
+            }
+
+            let diagnostics = analyzer.getDiagnostics()
+            #expect(diagnostics.isEmpty, "Should have no diagnostics for macro with table")
+        }
+    }
+
+    @Suite("Compilation Directive Validation")
+    struct CompilationDirectiveValidation {
+
+        @Test("ZIP-OPTIONS directive with valid options")
+        func zipOptionsValidOptions() throws {
+            let analyzer = SemanticAnalyzer()
+            let location = SourceLocation(file: "test.zil", line: 1, column: 1)
+
+            let zipOptionsDecl = ZILDeclaration.zipOptions(ZILZipOptionsDeclaration(
+                options: ["UNDO", "COLOR", "MOUSE"],
+                location: location
+            ))
+
+            let program = [zipOptionsDecl]
+            let result = analyzer.analyzeProgram(program)
+
+            guard case .success = result else {
+                Issue.record("ZIP-OPTIONS with valid options should succeed, but got: \(result)")
+                return
+            }
+
+            let context = analyzer.getCompilationContext()
+            #expect(context.hasZipOption(.undo))
+            #expect(context.hasZipOption(.color))
+            #expect(context.hasZipOption(.mouse))
+        }
+
+        @Test("ZIP-OPTIONS directive with invalid option")
+        func zipOptionsInvalidOption() throws {
+            let analyzer = SemanticAnalyzer()
+            let location = SourceLocation(file: "test.zil", line: 1, column: 1)
+
+            let zipOptionsDecl = ZILDeclaration.zipOptions(ZILZipOptionsDeclaration(
+                options: ["UNDO", "INVALID-OPTION", "COLOR"],
+                location: location
+            ))
+
+            let program = [zipOptionsDecl]
+            let result = analyzer.analyzeProgram(program)
+
+            guard case .failure(let diagnostics) = result else {
+                Issue.record("ZIP-OPTIONS with invalid option should fail, but got: \(result)")
+                return
+            }
+
+            let invalidOptionDiags = diagnostics.filter { diagnostic in
+                if case .undefinedSymbol(let name, let type) = diagnostic.code {
+                    return name == "INVALID-OPTION" && type == "ZIP option"
+                }
+                return false
+            }
+
+            #expect(invalidOptionDiags.count >= 1, "Should detect invalid ZIP option")
+        }
+
+        @Test("ORDER-OBJECTS? directive with valid strategy")
+        func orderObjectsValidStrategy() throws {
+            let analyzer = SemanticAnalyzer()
+            let location = SourceLocation(file: "test.zil", line: 1, column: 1)
+
+            let testCases = ["ROOMS-FIRST", "DEFINED", "ROOMS-LAST", "ROOMS-AND-LGS-FIRST"]
+
+            for ordering in testCases {
+                let orderObjectsDecl = ZILDeclaration.orderObjects(ZILOrderObjectsDeclaration(
+                    ordering: ordering,
+                    location: location
+                ))
+
+                let program = [orderObjectsDecl]
+                let result = analyzer.analyzeProgram(program)
+
+                guard case .success = result else {
+                    Issue.record("ORDER-OBJECTS? with '\(ordering)' should succeed, but got: \(result)")
+                    continue
+                }
+            }
+        }
+
+        @Test("ORDER-OBJECTS? directive with invalid strategy")
+        func orderObjectsInvalidStrategy() throws {
+            let analyzer = SemanticAnalyzer()
+            let location = SourceLocation(file: "test.zil", line: 1, column: 1)
+
+            let orderObjectsDecl = ZILDeclaration.orderObjects(ZILOrderObjectsDeclaration(
+                ordering: "INVALID-ORDERING",
+                location: location
+            ))
+
+            let program = [orderObjectsDecl]
+            let result = analyzer.analyzeProgram(program)
+
+            guard case .failure(let diagnostics) = result else {
+                Issue.record("ORDER-OBJECTS? with invalid strategy should fail, but got: \(result)")
+                return
+            }
+
+            let invalidStrategyDiags = diagnostics.filter { diagnostic in
+                if case .undefinedSymbol(let name, let type) = diagnostic.code {
+                    return name == "INVALID-ORDERING" && type == "object ordering strategy"
+                }
+                return false
+            }
+
+            #expect(invalidStrategyDiags.count >= 1, "Should detect invalid ordering strategy")
+        }
+
+        @Test("ORDER-TREE? directive with valid strategy")
+        func orderTreeValidStrategy() throws {
+            let analyzer = SemanticAnalyzer()
+            let location = SourceLocation(file: "test.zil", line: 1, column: 1)
+
+            let orderTreeDecl = ZILDeclaration.orderTree(ZILOrderTreeDeclaration(
+                ordering: "REVERSE-DEFINED",
+                location: location
+            ))
+
+            let program = [orderTreeDecl]
+            let result = analyzer.analyzeProgram(program)
+
+            guard case .success = result else {
+                Issue.record("ORDER-TREE? with valid strategy should succeed, but got: \(result)")
+                return
+            }
+
+            let context = analyzer.getCompilationContext()
+            #expect(context.getTreeOrdering() == .reverseDefined)
+        }
+
+        @Test("ORDER-FLAGS? directive with valid flags")
+        func orderFlagsValidFlags() throws {
+            let analyzer = SemanticAnalyzer()
+            let location = SourceLocation(file: "test.zil", line: 1, column: 1)
+
+            let orderFlagsDecl = ZILDeclaration.orderFlags(ZILOrderFlagsDeclaration(
+                order: "LAST",
+                flags: ["TOUCHBIT", "TRANSBIT"],
+                location: location
+            ))
+
+            let program = [orderFlagsDecl]
+            let result = analyzer.analyzeProgram(program)
+
+            guard case .success = result else {
+                Issue.record("ORDER-FLAGS? with valid flags should succeed, but got: \(result)")
+                return
+            }
+
+            let context = analyzer.getCompilationContext()
+            #expect(context.isFlagOrderedLast("TOUCHBIT"))
+            #expect(context.isFlagOrderedLast("TRANSBIT"))
+        }
+
+        @Test("ORDER-FLAGS? directive with invalid order keyword")
+        func orderFlagsInvalidKeyword() throws {
+            let analyzer = SemanticAnalyzer()
+            let location = SourceLocation(file: "test.zil", line: 1, column: 1)
+
+            let orderFlagsDecl = ZILDeclaration.orderFlags(ZILOrderFlagsDeclaration(
+                order: "FIRST",  // Should be "LAST"
+                flags: ["TOUCHBIT"],
+                location: location
+            ))
+
+            let program = [orderFlagsDecl]
+            let result = analyzer.analyzeProgram(program)
+
+            guard case .failure(let diagnostics) = result else {
+                Issue.record("ORDER-FLAGS? with invalid keyword should fail, but got: \(result)")
+                return
+            }
+
+            let invalidKeywordDiags = diagnostics.filter { diagnostic in
+                if case .undefinedSymbol(let name, let type) = diagnostic.code {
+                    return name == "FIRST" && type == "flag ordering keyword"
+                }
+                return false
+            }
+
+            #expect(invalidKeywordDiags.count >= 1, "Should detect invalid order keyword")
+        }
+
+        @Test("ROUTINE-FLAGS directive with valid flags")
+        func routineFlagsValidFlags() throws {
+            let analyzer = SemanticAnalyzer()
+            let location = SourceLocation(file: "test.zil", line: 1, column: 1)
+
+            let routineFlagsDecl = ZILDeclaration.routineFlags(ZILRoutineFlagsDeclaration(
+                flags: ["CLEAN-STACK?", "KEEP?"],
+                location: location
+            ))
+
+            let program = [routineFlagsDecl]
+            let result = analyzer.analyzeProgram(program)
+
+            guard case .success = result else {
+                Issue.record("ROUTINE-FLAGS with valid flags should succeed, but got: \(result)")
+                return
+            }
+
+            // Flags should be set in compilation context for next routine
+        }
+
+        @Test("ROUTINE-FLAGS directive with invalid flag")
+        func routineFlagsInvalidFlag() throws {
+            let analyzer = SemanticAnalyzer()
+            let location = SourceLocation(file: "test.zil", line: 1, column: 1)
+
+            let routineFlagsDecl = ZILDeclaration.routineFlags(ZILRoutineFlagsDeclaration(
+                flags: ["CLEAN-STACK?", "INVALID-FLAG?"],
+                location: location
+            ))
+
+            let program = [routineFlagsDecl]
+            let result = analyzer.analyzeProgram(program)
+
+            guard case .failure(let diagnostics) = result else {
+                Issue.record("ROUTINE-FLAGS with invalid flag should fail, but got: \(result)")
+                return
+            }
+
+            let invalidFlagDiags = diagnostics.filter { diagnostic in
+                if case .undefinedSymbol(let name, let type) = diagnostic.code {
+                    return name == "INVALID-FLAG?" && type == "routine flag"
+                }
+                return false
+            }
+
+            #expect(invalidFlagDiags.count >= 1, "Should detect invalid routine flag")
+        }
+
+        @Test("FILE-FLAGS directive with valid flags")
+        func fileFlagsValidFlags() throws {
+            let analyzer = SemanticAnalyzer()
+            let location = SourceLocation(file: "test.zil", line: 1, column: 1)
+
+            let fileFlagsDecl = ZILDeclaration.fileFlags(ZILFileFlagsDeclaration(
+                flags: ["CLEAN-STACK?", "MDL-ZIL?"],
+                location: location
+            ))
+
+            let program = [fileFlagsDecl]
+            let result = analyzer.analyzeProgram(program)
+
+            guard case .success = result else {
+                Issue.record("FILE-FLAGS with valid flags should succeed, but got: \(result)")
+                return
+            }
+
+            // Flags should be set in compilation context for current file
+        }
+
+        @Test("FILE-FLAGS directive with invalid flag")
+        func fileFlagsInvalidFlag() throws {
+            let analyzer = SemanticAnalyzer()
+            let location = SourceLocation(file: "test.zil", line: 1, column: 1)
+
+            let fileFlagsDecl = ZILDeclaration.fileFlags(ZILFileFlagsDeclaration(
+                flags: ["CLEAN-STACK?", "INVALID-FILE-FLAG?"],
+                location: location
+            ))
+
+            let program = [fileFlagsDecl]
+            let result = analyzer.analyzeProgram(program)
+
+            guard case .failure(let diagnostics) = result else {
+                Issue.record("FILE-FLAGS with invalid flag should fail, but got: \(result)")
+                return
+            }
+
+            let invalidFlagDiags = diagnostics.filter { diagnostic in
+                if case .undefinedSymbol(let name, let type) = diagnostic.code {
+                    return name == "INVALID-FILE-FLAG?" && type == "file flag"
+                }
+                return false
+            }
+
+            #expect(invalidFlagDiags.count >= 1, "Should detect invalid file flag")
+        }
+
+        @Test("Multiple directives in program")
+        func multipleDirectives() throws {
+            let analyzer = SemanticAnalyzer()
+            let location = SourceLocation(file: "test.zil", line: 1, column: 1)
+
+            let zipOptionsDecl = ZILDeclaration.zipOptions(ZILZipOptionsDeclaration(
+                options: ["UNDO", "COLOR"],
+                location: location
+            ))
+
+            let orderObjectsDecl = ZILDeclaration.orderObjects(ZILOrderObjectsDeclaration(
+                ordering: "ROOMS-FIRST",
+                location: location
+            ))
+
+            let orderTreeDecl = ZILDeclaration.orderTree(ZILOrderTreeDeclaration(
+                ordering: "REVERSE-DEFINED",
+                location: location
+            ))
+
+            let program = [zipOptionsDecl, orderObjectsDecl, orderTreeDecl]
+            let result = analyzer.analyzeProgram(program)
+
+            guard case .success = result else {
+                Issue.record("Multiple valid directives should succeed, but got: \(result)")
+                return
+            }
+
+            let context = analyzer.getCompilationContext()
+            #expect(context.hasZipOption(.undo))
+            #expect(context.hasZipOption(.color))
+            #expect(context.getObjectOrdering() == .roomsFirst)
+            #expect(context.getTreeOrdering() == .reverseDefined)
+        }
+    }
 }

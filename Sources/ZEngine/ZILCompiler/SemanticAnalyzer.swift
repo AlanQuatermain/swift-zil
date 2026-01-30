@@ -19,6 +19,7 @@ public struct SemanticDiagnostic: Sendable, Equatable {
         case parameterCountMismatch(routine: String, expected: Int, actual: Int)
         case circularDependency(symbols: [String])
         case unreachableCode(reason: String)
+        case recursiveMacroDefinition(name: String)
     }
 
     public let code: Code
@@ -51,6 +52,8 @@ public struct SemanticDiagnostic: Sendable, Equatable {
             "Circular dependency detected: \(symbols.joined(separator: " -> "))"
         case .unreachableCode(let reason):
             "Unreachable code: \(reason)"
+        case .recursiveMacroDefinition(let name):
+            "Recursive macro definition: macro '\(name)' references itself"
         }
 
         if let context = context {
@@ -68,6 +71,9 @@ public final class SemanticAnalyzer: Sendable {
         /// Symbol table for semantic analysis
         var symbolTable: SymbolTableManager
 
+        /// Compilation context for directive processing
+        var compilationContext: CompilationContext
+
         /// Diagnostics collected during analysis
         var diagnostics: [SemanticDiagnostic] = []
 
@@ -82,12 +88,15 @@ public final class SemanticAnalyzer: Sendable {
 
         /// Currently analyzing symbols (for recursion detection)
         var analyzingSymbols: Set<String> = []
+
+        /// Current local variable context (for macro parameter validation)
+        var currentLocalVariables: Set<String> = []
     }
 
     private let state: Mutex<State>
 
-    public init(symbolTable: SymbolTableManager = SymbolTableManager()) {
-        self.state = Mutex(State(symbolTable: symbolTable))
+    public init(symbolTable: SymbolTableManager = SymbolTableManager(), compilationContext: CompilationContext = CompilationContext()) {
+        self.state = Mutex(State(symbolTable: symbolTable, compilationContext: compilationContext))
 
         // Initialize built-in ZIL functions
         state.withLock { state in
@@ -139,6 +148,13 @@ public final class SemanticAnalyzer: Sendable {
     public func getSymbolTable() -> SymbolTableManager {
         return state.withLock { state in
             state.symbolTable
+        }
+    }
+
+    /// Get the compilation context used for analysis
+    public func getCompilationContext() -> CompilationContext {
+        return state.withLock { state in
+            state.compilationContext
         }
     }
 
@@ -273,6 +289,30 @@ public final class SemanticAnalyzer: Sendable {
         case .buzz(_):
             // BUZZ declarations don't define symbols, they configure the parser
             break
+
+        case .zipOptions(_):
+            // ZIP-OPTIONS declarations don't define symbols, they configure story file capabilities
+            break
+
+        case .orderObjects(_):
+            // ORDER-OBJECTS? declarations don't define symbols, they configure object ordering
+            break
+
+        case .orderTree(_):
+            // ORDER-TREE? declarations don't define symbols, they configure tree ordering
+            break
+
+        case .orderFlags(_):
+            // ORDER-FLAGS? declarations don't define symbols, they configure flag ordering
+            break
+
+        case .routineFlags(_):
+            // ROUTINE-FLAGS declarations don't define symbols, they set flags for next routine
+            break
+
+        case .fileFlags(_):
+            // FILE-FLAGS declarations don't define symbols, they configure file-level flags
+            break
         }
     }
 
@@ -310,20 +350,44 @@ public final class SemanticAnalyzer: Sendable {
             break
 
         case .syntax(let syntax):
-            // TODO: Validate SYNTAX patterns and action routine
-            validateExpression(ZILExpression.atom(syntax.action, syntax.location), state: &state)
+            // Validate SYNTAX patterns and action routine
+            validateSyntax(syntax, state: &state)
 
         case .synonym(_):
             // SYNONYM declarations don't need complex validation
             break
 
         case .defmac(let defmac):
-            // TODO: Validate macro body expression
-            validateExpression(defmac.body, state: &state)
+            // Validate macro body expression with parameter context
+            validateMacroBody(defmac, state: &state)
 
         case .buzz(_):
             // BUZZ declarations don't need validation
             break
+
+        case .zipOptions(let zipOptions):
+            // Process ZIP-OPTIONS directive
+            validateAndApplyZipOptions(zipOptions, state: &state)
+
+        case .orderObjects(let orderObjects):
+            // Process ORDER-OBJECTS? directive
+            validateAndApplyOrderObjects(orderObjects, state: &state)
+
+        case .orderTree(let orderTree):
+            // Process ORDER-TREE? directive
+            validateAndApplyOrderTree(orderTree, state: &state)
+
+        case .orderFlags(let orderFlags):
+            // Process ORDER-FLAGS? directive
+            validateAndApplyOrderFlags(orderFlags, state: &state)
+
+        case .routineFlags(let routineFlags):
+            // Process ROUTINE-FLAGS directive
+            validateAndApplyRoutineFlags(routineFlags, state: &state)
+
+        case .fileFlags(let fileFlags):
+            // Process FILE-FLAGS directive
+            validateAndApplyFileFlags(fileFlags, state: &state)
         }
     }
 
@@ -406,6 +470,45 @@ public final class SemanticAnalyzer: Sendable {
         defer { state.contextStack.removeLast() }
 
         validateExpression(constant.value, state: &state)
+    }
+
+    /// Validate SYNTAX declaration
+    private func validateSyntax(_ syntax: ZILSyntaxDeclaration, state: inout State) {
+        state.contextStack.append("SYNTAX \(syntax.verb)")
+        defer { state.contextStack.removeLast() }
+
+        // Validate action routine exists or will be defined
+        // Action may contain multiple routines (e.g., "V-TAKE PRE-TAKE")
+        let actionParts = syntax.action.split(separator: " ").map(String.init)
+
+        for actionName in actionParts {
+            validateSymbolReference(
+                actionName,
+                location: syntax.location,
+                type: "routine",
+                state: &state
+            )
+        }
+
+        // Validate pattern elements
+        for element in syntax.pattern {
+            switch element {
+            case .object(_, let constraints):
+                // Validate each constraint expression
+                for constraint in constraints {
+                    validateExpression(constraint, state: &state)
+                }
+
+            case .preposition(_):
+                // Prepositions don't need validation - they're just literal words
+                break
+
+            case .optional(_):
+                // Optional elements not currently used in real ZIL, but if they were,
+                // we'd validate the wrapped element recursively
+                break
+            }
+        }
     }
 
     /// Validate an expression
@@ -507,6 +610,95 @@ public final class SemanticAnalyzer: Sendable {
         state.forwardReferences[name, default: []].append((location: location, context: context))
     }
 
+    /// Validate a macro body with parameter context
+    private func validateMacroBody(_ defmac: ZILDefmacDeclaration, state: inout State) {
+        // Create a temporary local variable context for macro parameters
+        // This allows .PARAM references to be treated as valid within the macro body
+        var localVars: Set<String> = []
+        for param in defmac.parameters {
+            switch param {
+            case .standard(let name), .quoted(let name), .variableArgs(let name), .optional(let name, _):
+                localVars.insert(name)
+            }
+        }
+
+        // Save current local variable context
+        let savedLocalVars = state.currentLocalVariables
+        state.currentLocalVariables = localVars
+
+        // Validate the macro body expression
+        validateMacroBodyExpression(defmac.body, macroName: defmac.name, state: &state)
+
+        // Restore local variable context
+        state.currentLocalVariables = savedLocalVars
+    }
+
+    /// Validate expressions within a macro body, checking for recursive references
+    private func validateMacroBodyExpression(_ expression: ZILExpression, macroName: String, state: inout State) {
+        switch expression {
+        case .atom(let name, let location):
+            // Check if this is a recursive macro call
+            if name == macroName {
+                let diagnostic = SemanticDiagnostic(
+                    code: .recursiveMacroDefinition(name: macroName),
+                    location: location,
+                    context: "DEFMAC \(macroName)"
+                )
+                state.diagnostics.append(diagnostic)
+            } else {
+                // Validate as normal symbol reference
+                validateSymbolReference(name, location: location, type: "routine or constant", state: &state)
+            }
+
+        case .globalVariable(let name, let location):
+            validateSymbolReference(name, location: location, type: "global variable", state: &state)
+
+        case .localVariable(let name, let location):
+            // Check if this is a macro parameter reference
+            if !state.currentLocalVariables.contains(name) {
+                // Not a macro parameter, validate as regular local variable
+                validateSymbolReference(name, location: location, type: "local variable or macro parameter", state: &state)
+            }
+            // If it is a macro parameter, it's valid - no further validation needed
+
+        case .propertyReference(let name, let location):
+            validateSymbolReference(name, location: location, type: "property", state: &state)
+
+        case .flagReference(let name, let location):
+            validateSymbolReference(name, location: location, type: "flag", state: &state)
+
+        case .list(let elements, _):
+            // Check first element for recursive macro call
+            if case .atom(let name, let location) = elements.first, name == macroName {
+                let diagnostic = SemanticDiagnostic(
+                    code: .recursiveMacroDefinition(name: macroName),
+                    location: location,
+                    context: "DEFMAC \(macroName)"
+                )
+                state.diagnostics.append(diagnostic)
+            }
+
+            // Recursively validate all list elements
+            for element in elements {
+                validateMacroBodyExpression(element, macroName: macroName, state: &state)
+            }
+
+        case .number(_, _), .string(_, _):
+            // Literals are always valid
+            break
+
+        case .table(_, let elements, _):
+            // Validate table elements
+            for element in elements {
+                validateMacroBodyExpression(element, macroName: macroName, state: &state)
+            }
+
+        case .indirection(let targetExpression, _):
+            // Validate the target expression
+            validateMacroBodyExpression(targetExpression, macroName: macroName, state: &state)
+        }
+    }
+
     /// Record dependency between symbols
     private func recordDependency(from: String, to: String, state: inout State) {
         state.dependencyGraph[from, default: []].insert(to)
@@ -564,6 +756,168 @@ public final class SemanticAnalyzer: Sendable {
         }
     }
 
+    // MARK: - Directive Validation and Application
+
+    /// Validate and apply ZIP-OPTIONS directive
+    private func validateAndApplyZipOptions(_ zipOptions: ZILZipOptionsDeclaration, state: inout State) {
+        var options: ZipOptions = []
+
+        for optionName in zipOptions.options {
+            switch optionName.uppercased() {
+            case "COLOR", "COLOUR":
+                options.insert(.color)
+            case "MOUSE":
+                options.insert(.mouse)
+            case "UNDO":
+                options.insert(.undo)
+            case "DISPLAY":
+                options.insert(.display)
+            case "SOUND":
+                options.insert(.sound)
+            case "MENU":
+                options.insert(.menu)
+            case "BIG":
+                options.insert(.big)
+            default:
+                let diagnostic = SemanticDiagnostic(
+                    code: .undefinedSymbol(name: optionName, type: "ZIP option"),
+                    location: zipOptions.location,
+                    context: "Unknown ZIP option '\(optionName)'"
+                )
+                state.diagnostics.append(diagnostic)
+            }
+        }
+
+        state.compilationContext.addZipOptions(options)
+    }
+
+    /// Validate and apply ORDER-OBJECTS? directive
+    private func validateAndApplyOrderObjects(_ orderObjects: ZILOrderObjectsDeclaration, state: inout State) {
+        let ordering: ObjectOrdering
+
+        switch orderObjects.ordering.uppercased() {
+        case "DEFINED":
+            ordering = .defined
+        case "ROOMS-FIRST":
+            ordering = .roomsFirst
+        case "ROOMS-AND-LGS-FIRST":
+            ordering = .roomsAndLgsFirst
+        case "ROOMS-LAST":
+            ordering = .roomsLast
+        default:
+            let diagnostic = SemanticDiagnostic(
+                code: .undefinedSymbol(name: orderObjects.ordering, type: "object ordering strategy"),
+                location: orderObjects.location,
+                context: "Unknown object ordering '\(orderObjects.ordering)'"
+            )
+            state.diagnostics.append(diagnostic)
+            return
+        }
+
+        state.compilationContext.setObjectOrdering(ordering)
+    }
+
+    /// Validate and apply ORDER-TREE? directive
+    private func validateAndApplyOrderTree(_ orderTree: ZILOrderTreeDeclaration, state: inout State) {
+        let ordering: TreeOrdering
+
+        switch orderTree.ordering.uppercased() {
+        case "REVERSE-DEFINED":
+            ordering = .reverseDefined
+        default:
+            let diagnostic = SemanticDiagnostic(
+                code: .undefinedSymbol(name: orderTree.ordering, type: "tree ordering strategy"),
+                location: orderTree.location,
+                context: "Unknown tree ordering '\(orderTree.ordering)'"
+            )
+            state.diagnostics.append(diagnostic)
+            return
+        }
+
+        state.compilationContext.setTreeOrdering(ordering)
+    }
+
+    /// Validate and apply ORDER-FLAGS? directive
+    private func validateAndApplyOrderFlags(_ orderFlags: ZILOrderFlagsDeclaration, state: inout State) {
+        // Validate order keyword
+        guard orderFlags.order.uppercased() == "LAST" else {
+            let diagnostic = SemanticDiagnostic(
+                code: .undefinedSymbol(name: orderFlags.order, type: "flag ordering keyword"),
+                location: orderFlags.location,
+                context: "Expected 'LAST' for flag ordering, got '\(orderFlags.order)'"
+            )
+            state.diagnostics.append(diagnostic)
+            return
+        }
+
+        state.compilationContext.addFlagsOrderedLast(orderFlags.flags)
+    }
+
+    /// Validate and apply ROUTINE-FLAGS directive
+    private func validateAndApplyRoutineFlags(_ routineFlags: ZILRoutineFlagsDeclaration, state: inout State) {
+        var flags: RoutineFlags = []
+
+        for flagName in routineFlags.flags {
+            switch flagName.uppercased() {
+            case "CLEAN-STACK?":
+                flags.insert(.cleanStack)
+            case "KEEP?":
+                flags.insert(.keep)
+            case "UNUSED?":
+                flags.insert(.suppressUnused)
+            default:
+                let diagnostic = SemanticDiagnostic(
+                    code: .undefinedSymbol(name: flagName, type: "routine flag"),
+                    location: routineFlags.location,
+                    context: "Unknown routine flag '\(flagName)'"
+                )
+                state.diagnostics.append(diagnostic)
+            }
+        }
+
+        state.compilationContext.setNextRoutineFlags(flags)
+    }
+
+    /// Validate and apply FILE-FLAGS directive
+    private func validateAndApplyFileFlags(_ fileFlags: ZILFileFlagsDeclaration, state: inout State) {
+        var flags: FileFlags = []
+
+        for flagName in fileFlags.flags {
+            switch flagName.uppercased() {
+            case "CLEAN-STACK?":
+                flags.insert(.cleanStack)
+            case "MDL-ZIL?":
+                flags.insert(.mdlZil)
+            case "SENTENCE-ENDS?":
+                flags.insert(.sentenceEnds)
+            case "KEEP?":
+                flags.insert(.keepRoutines)
+            case "UNUSED?":
+                flags.insert(.suppressUnusedWarnings)
+            case "ZAP-TO-SOURCE-DIRECTORY?":
+                flags.insert(.zapToSourceDirectory)
+            default:
+                let diagnostic = SemanticDiagnostic(
+                    code: .undefinedSymbol(name: flagName, type: "file flag"),
+                    location: fileFlags.location,
+                    context: "Unknown file flag '\(flagName)'"
+                )
+                state.diagnostics.append(diagnostic)
+            }
+        }
+
+        // Update file context with new flags
+        // Note: In a real implementation, we'd need to track file paths
+        // For now, we just update the current file flags directly
+        if let currentPath = state.compilationContext.getCurrentFilePath() {
+            state.compilationContext.popFileContext()
+            state.compilationContext.pushFileContext(currentPath, flags: flags)
+        } else {
+            // No file context yet, push one with default path
+            state.compilationContext.pushFileContext("<unknown>", flags: flags)
+        }
+    }
+
     /// Convert symbol table diagnostic to semantic diagnostic
     private func convertSymbolTableDiagnostic(_ symDiag: SymbolDiagnostic) -> SemanticDiagnostic {
         switch symDiag.code {
@@ -603,6 +957,9 @@ public final class SemanticAnalyzer: Sendable {
 
         // Built-in Functions (comprehensive list from ZIL expert)
         let builtinFunctions = [
+            // Macro and Meta-Programming Functions
+            "FORM", "LIST", "SEGMENT",
+
             // Arithmetic and Math Functions
             "+", "ADD", "-", "SUB", "*", "MUL", "/", "DIV",
             "MOD", "%", "RANDOM", "ABS", "MIN", "MAX", "SQRT",
@@ -669,8 +1026,9 @@ public final class SemanticAnalyzer: Sendable {
 
         // Built-in Constants (not functions) - only core constants that shouldn't be redefined
         let builtinConstants = [
-            "T", "FALSE", "<>", "PRSA", "PRSO", "PRSI", "WINNER", "HERE"
+            "T", "FALSE", "<>", "PRSA", "PRSO", "PRSI", "WINNER", "HERE", "ELSE"
             // Removed "PLAYER", "ROOMS", etc. as they may be legitimately defined by users
+            // ELSE is equivalent to T in COND clauses (default/fallback clause)
         ]
 
         // Define built-in functions as routines with variable parameters

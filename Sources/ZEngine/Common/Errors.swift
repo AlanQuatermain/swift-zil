@@ -118,6 +118,9 @@ public struct ParseError: ZILError {
 
         /// Referenced file could not be found
         case fileNotFound(String, currentPath: String?)
+
+        /// Macro expansion failed
+        case macroExpansionFailed(String)
     }
 
     private init(_ code: ErrorCode, location: SourceLocation) {
@@ -227,6 +230,11 @@ public struct ParseError: ZILError {
         return ParseError(.fileNotFound(filename, currentPath: currentPath), location: SourceLocation(file: currentPath ?? "<unknown>", line: 0, column: 0))
     }
 
+    /// Creates a macro expansion failed error.
+    public static func macroExpansionFailed(_ message: String, location: SourceLocation) -> ParseError {
+        return ParseError(.macroExpansionFailed(message), location: location)
+    }
+
     public var message: String {
         switch code {
         case .unexpectedToken(let expected, let found):
@@ -273,6 +281,8 @@ public struct ParseError: ZILError {
             } else {
                 return "file not found: '\(filename)'"
             }
+        case .macroExpansionFailed(let message):
+            return "macro expansion failed: \(message)"
         }
     }
 

@@ -115,6 +115,24 @@ public enum ZILDeclaration: Sendable, Equatable {
 
     /// Buzzword definition (ignored words)
     case buzz(ZILBuzzDeclaration)
+
+    /// ZIP options configuration
+    case zipOptions(ZILZipOptionsDeclaration)
+
+    /// Object ordering directive
+    case orderObjects(ZILOrderObjectsDeclaration)
+
+    /// Tree ordering directive
+    case orderTree(ZILOrderTreeDeclaration)
+
+    /// Flag ordering directive
+    case orderFlags(ZILOrderFlagsDeclaration)
+
+    /// Routine compilation flags
+    case routineFlags(ZILRoutineFlagsDeclaration)
+
+    /// File compilation flags
+    case fileFlags(ZILFileFlagsDeclaration)
 }
 
 /// Parameter with optional default value.
@@ -441,21 +459,40 @@ public indirect enum ZILSyntaxElement: Sendable, Equatable {
     case optional(ZILSyntaxElement)
 }
 
+/// Type of synonym relationship for vocabulary directives.
+///
+/// Different synonym types mark words with different grammatical roles in the parser.
+/// Only includes historically-used synonym types from authentic Infocom games.
+public enum SynonymType: Sendable, Equatable {
+    /// Regular SYNONYM - generic word equivalency
+    case generic
+    /// VERB-SYNONYM - verb synonym
+    case verb
+    /// PREP-SYNONYM - preposition synonym
+    case preposition
+    /// ADJ-SYNONYM - adjective synonym
+    case adjective
+}
+
 /// Word synonym declaration.
 ///
-/// The SYNONYM directive defines word equivalencies for the parser.
+/// The SYNONYM directive (and variants like PREP-SYNONYM, VERB-SYNONYM, ADJ-SYNONYM)
+/// define word equivalencies for the parser vocabulary.
 /// Example: SYNONYM LAMP LIGHT LANTERN = LAMP
 public struct ZILSynonymDeclaration: Sendable, Equatable {
     /// List of synonym words
     public let words: [String]
     /// The canonical word they map to
     public let canonical: String
+    /// Type of synonym (generic, preposition, verb, adjective)
+    public let type: SynonymType
     /// Source location of the declaration
     public let location: SourceLocation
 
-    public init(words: [String], canonical: String, location: SourceLocation) {
+    public init(words: [String], canonical: String, type: SynonymType = .generic, location: SourceLocation) {
         self.words = words
         self.canonical = canonical
+        self.type = type
         self.location = location
     }
 }
@@ -504,6 +541,105 @@ public struct ZILBuzzDeclaration: Sendable, Equatable {
 
     public init(words: [String], location: SourceLocation) {
         self.words = words
+        self.location = location
+    }
+}
+
+/// ZIP options configuration declaration.
+///
+/// The ZIP-OPTIONS directive enables story file capabilities like UNDO, COLOR, MOUSE, etc.
+/// Example: ZIP-OPTIONS UNDO COLOR MOUSE
+public struct ZILZipOptionsDeclaration: Sendable, Equatable {
+    /// List of option names to enable
+    public let options: [String]
+    /// Source location of the declaration
+    public let location: SourceLocation
+
+    public init(options: [String], location: SourceLocation) {
+        self.options = options
+        self.location = location
+    }
+}
+
+/// Object ordering directive declaration.
+///
+/// The ORDER-OBJECTS? directive controls how objects are arranged in the object table.
+/// Example: ORDER-OBJECTS? ROOMS-FIRST
+public struct ZILOrderObjectsDeclaration: Sendable, Equatable {
+    /// Ordering strategy name (e.g., "ROOMS-FIRST", "DEFINED")
+    public let ordering: String
+    /// Source location of the declaration
+    public let location: SourceLocation
+
+    public init(ordering: String, location: SourceLocation) {
+        self.ordering = ordering
+        self.location = location
+    }
+}
+
+/// Tree ordering directive declaration.
+///
+/// The ORDER-TREE? directive controls how the object tree is organized.
+/// Example: ORDER-TREE? REVERSE-DEFINED
+public struct ZILOrderTreeDeclaration: Sendable, Equatable {
+    /// Ordering strategy name (e.g., "REVERSE-DEFINED")
+    public let ordering: String
+    /// Source location of the declaration
+    public let location: SourceLocation
+
+    public init(ordering: String, location: SourceLocation) {
+        self.ordering = ordering
+        self.location = location
+    }
+}
+
+/// Flag ordering directive declaration.
+///
+/// The ORDER-FLAGS? directive specifies flags that should appear last in the flag table.
+/// Example: ORDER-FLAGS? LAST TOUCHBIT TRANSBIT
+public struct ZILOrderFlagsDeclaration: Sendable, Equatable {
+    /// Ordering keyword (usually "LAST")
+    public let order: String
+    /// List of flag names to order last
+    public let flags: [String]
+    /// Source location of the declaration
+    public let location: SourceLocation
+
+    public init(order: String, flags: [String], location: SourceLocation) {
+        self.order = order
+        self.flags = flags
+        self.location = location
+    }
+}
+
+/// Routine compilation flags declaration.
+///
+/// The ROUTINE-FLAGS directive sets flags for the next routine definition.
+/// Example: ROUTINE-FLAGS CLEAN-STACK? KEEP?
+public struct ZILRoutineFlagsDeclaration: Sendable, Equatable {
+    /// List of flag names (e.g., "CLEAN-STACK?", "KEEP?", "UNUSED?")
+    public let flags: [String]
+    /// Source location of the declaration
+    public let location: SourceLocation
+
+    public init(flags: [String], location: SourceLocation) {
+        self.flags = flags
+        self.location = location
+    }
+}
+
+/// File compilation flags declaration.
+///
+/// The FILE-FLAGS directive sets compilation flags for the current file.
+/// Example: FILE-FLAGS CLEAN-STACK? MDL-ZIL?
+public struct ZILFileFlagsDeclaration: Sendable, Equatable {
+    /// List of flag names
+    public let flags: [String]
+    /// Source location of the declaration
+    public let location: SourceLocation
+
+    public init(flags: [String], location: SourceLocation) {
+        self.flags = flags
         self.location = location
     }
 }
@@ -561,6 +697,18 @@ extension ZILDeclaration: ZILNode {
             return defmac.location
         case .buzz(let buzz):
             return buzz.location
+        case .zipOptions(let zipOptions):
+            return zipOptions.location
+        case .orderObjects(let orderObjects):
+            return orderObjects.location
+        case .orderTree(let orderTree):
+            return orderTree.location
+        case .orderFlags(let orderFlags):
+            return orderFlags.location
+        case .routineFlags(let routineFlags):
+            return routineFlags.location
+        case .fileFlags(let fileFlags):
+            return fileFlags.location
         }
     }
 }
@@ -581,3 +729,9 @@ extension ZILSyntaxDeclaration: ZILNode {}
 extension ZILSynonymDeclaration: ZILNode {}
 extension ZILDefmacDeclaration: ZILNode {}
 extension ZILBuzzDeclaration: ZILNode {}
+extension ZILZipOptionsDeclaration: ZILNode {}
+extension ZILOrderObjectsDeclaration: ZILNode {}
+extension ZILOrderTreeDeclaration: ZILNode {}
+extension ZILOrderFlagsDeclaration: ZILNode {}
+extension ZILRoutineFlagsDeclaration: ZILNode {}
+extension ZILFileFlagsDeclaration: ZILNode {}
